@@ -1,0 +1,40 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.154.0/containers/python-3
+{
+	"name": "audio-tui-editor",
+	"build": {
+		"dockerfile": "./Dockerfile",
+		"args": {
+			"USER_ID": "${localEnv:DEV_CONTAINER_USER_ID}",
+			"GROUP_ID": "${localEnv:DEV_CONTAINER_GROUP_ID}",
+			"USERNAME": "${localEnv:USER}"
+		}
+	},
+	// Set *default* container specific settings.json values on container create.
+	"customizations": {
+		 "vscode": {
+			"settings": {
+				"[rust]": {
+					"editor.formatOnSave": true
+				}
+			},
+			"extensions": [
+				"rust-lang.rust-analyzer"
+			],
+		 }
+	},
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/opt/dot-agent/dot-claude",
+	},
+	"mounts": ["source=${localEnv:AGENT_HOME},target=/opt/dot-agent,type=bind"],
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "pip3 install --user -r requirements.txt",
+	"postCreateCommand": "./.devcontainer/post-create.sh",
+
+	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "${localEnv:USER}"
+}
