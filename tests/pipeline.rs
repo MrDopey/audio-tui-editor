@@ -580,7 +580,7 @@ fn a_dry_run_reports_changes_without_touching_any_file() {
         .map(|f| std::fs::read(&f.path).unwrap())
         .collect();
 
-    let report = batch::run(&files, &Config::default(), RunMode::DryRun, |_| {});
+    let report = batch::run(&files, &[], &Config::default(), RunMode::DryRun, |_| {});
 
     assert_eq!(report.processed(), 3);
     assert_eq!(report.changed(), 2, "two files have silence to trim");
@@ -615,7 +615,7 @@ fn an_applied_run_trims_each_file_independently_and_reports_noops() {
 
     let files = probe::scan_folder(ws.path()).expect("scanning");
     let mut seen = Vec::new();
-    let report = batch::run(&files, &Config::default(), RunMode::Apply, |progress| {
+    let report = batch::run(&files, &[], &Config::default(), RunMode::Apply, |progress| {
         if let batch::Progress::Item(item) = progress {
             seen.push(item.number);
         }
@@ -655,7 +655,7 @@ fn a_broken_file_fails_alone_without_stopping_the_run() {
     broken.duration = 60.0;
     files.push(broken);
 
-    let report = batch::run(&files, &Config::default(), RunMode::Apply, |_| {});
+    let report = batch::run(&files, &[], &Config::default(), RunMode::Apply, |_| {});
 
     assert_eq!(report.processed(), 2);
     assert_eq!(report.failed(), 1, "the missing file must fail");

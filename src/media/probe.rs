@@ -208,11 +208,33 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
     }))
 }
 
+/// A candidate file that could not be offered for editing, and why.
+#[derive(Debug, Clone)]
+pub struct SkippedFile {
+    pub name: String,
+    pub reason: String,
+}
+
+/// The outcome of scanning a folder: files ready to edit, plus anything that
+/// looked like it might be audio but could not be probed successfully.
+#[derive(Debug, Clone, Default)]
+pub struct ScanResult {
+    pub files: Vec<MediaInfo>,
+    pub skipped: Vec<SkippedFile>,
+}
+
 /// Scan a folder for files that probe as audio, sorted by name.
 ///
 /// Extensions are used only to skip obvious non-media files cheaply; anything
 /// plausible is confirmed by probing.
 pub fn scan_folder(folder: &Path) -> Result<Vec<MediaInfo>> {
+    Ok(scan_folder_detailed(folder)?.files)
+}
+
+/// As [`scan_folder`], but also reports candidates that could not be read, so
+/// a folder-wide run can account for every file rather than silently dropping
+/// the ones it could not probe (design §17).
+pub fn scan_folder_detailed(folder: &Path) -> Result<ScanResult> {
     let entries = std::fs::read_dir(folder)
         .with_context(|| format!("reading folder {}", folder.display()))?;
 
@@ -234,19 +256,32 @@ pub fn scan_folder(folder: &Path) -> Result<Vec<MediaInfo>> {
     }
     paths.sort();
 
-    let mut found = Vec::new();
+    let mut result = ScanResult::default();
     for path in paths {
         if !worth_probing(&path) {
             continue;
         }
-        // A file that fails to probe simply is not offered for editing.
-        if let Ok(Some(info)) = probe(&path) {
-            if info.duration > 0.0 {
-                found.push(info);
-            }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        match probe(&path) {
+            Ok(Some(info)) if info.duration > 0.0 => result.files.push(info),
+            Ok(Some(_)) => result.skipped.push(SkippedFile {
+                name,
+                reason: "no measurable duration".to_string(),
+            }),
+            Ok(None) => result.skipped.push(SkippedFile {
+                name,
+                reason: "no audio stream".to_string(),
+            }),
+            Err(err) => result.skipped.push(SkippedFile {
+                name,
+                reason: format!("{err:#}"),
+            }),
         }
     }
-    Ok(found)
+    Ok(result)
 }
 
 /// Cheap pre-filter. Extensionless files are still probed, so unusual names

@@ -74,6 +74,10 @@ pub struct AudioPlayer {
     silent_position: f64,
     silent_since: Option<Instant>,
     sink: Option<rodio::Player>,
+    /// Set when the decoder failed to start (e.g. ffmpeg missing, or the
+    /// file could not be decoded), so the UI can say something went wrong
+    /// instead of silently doing nothing (design §20).
+    decode_error: Option<String>,
 }
 
 impl AudioPlayer {
@@ -92,6 +96,7 @@ impl AudioPlayer {
             silent_position: 0.0,
             silent_since: None,
             sink,
+            decode_error: None,
         };
         player.apply_volume();
         player.load_from(0.0);
@@ -100,6 +105,11 @@ impl AudioPlayer {
 
     pub fn duration(&self) -> f64 {
         self.duration
+    }
+
+    /// Why decoding could not start, if it could not.
+    pub fn error(&self) -> Option<&str> {
+        self.decode_error.as_deref()
     }
 
     pub fn is_playing(&self) -> bool {
@@ -219,8 +229,17 @@ impl AudioPlayer {
         };
         sink.clear();
         let remaining = (self.duration - offset).max(0.0);
-        if let Some(source) = FfmpegSource::spawn(&self.path, offset, remaining) {
-            sink.append(source);
+        match FfmpegSource::spawn(&self.path, offset, remaining) {
+            Some(source) => {
+                self.decode_error = None;
+                sink.append(source);
+            }
+            None => {
+                self.decode_error = Some(format!(
+                    "could not start decoding {}",
+                    self.path.display()
+                ));
+            }
         }
         sink.pause();
     }
@@ -463,6 +482,15 @@ mod tests {
         assert_eq!(player.volume(), 0.0, "volume is clamped at zero");
         player.adjust_volume(1000.0);
         assert_eq!(player.volume(), 150.0, "volume is capped");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn a_silent_player_reports_no_decode_error() {
+        let path = fixture("no-error", 1);
+        let output = AudioOutput::silent();
+        let player = AudioPlayer::new(&output, &path, 60.0, 100.0);
+        assert!(player.error().is_none());
         cleanup(&path);
     }
 

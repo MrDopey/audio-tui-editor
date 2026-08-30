@@ -332,6 +332,12 @@ fn render_transport(frame: &mut Frame, session: &Session, device: bool, area: Re
             Style::default().fg(Color::Yellow),
         ));
     }
+    if let Some(error) = session.player.error() {
+        spans.push(Span::styled(
+            format!("    playback failed: {error}"),
+            Style::default().fg(Color::Red),
+        ));
+    }
 
     frame.render_widget(
         Paragraph::new(Line::from(spans)).block(Block::bordered().border_type(BorderType::Rounded)),
@@ -521,7 +527,7 @@ fn hint_text(app: &App) -> &'static str {
             "j/k move  gg/G ends  C-d/C-u page  / search  n/N repeat  Enter open  ? help  q quit"
         }
         Mode::Play => {
-            "space play  h/l seek  C-h/C-l ±60s  j/k volume  e edit  m metadata  :w save  Esc back"
+            "space play  h/l seek  C-h/C-l ±60s  g/G start/end  j/k volume  e edit  m metadata  :w save  Esc back"
         }
         Mode::Edit => {
             "h/l move marker  C-h/C-l large  Tab switch  b/e set at cursor  B/E type +10s -1m 50%  a auto  :w save  Esc back"
@@ -664,9 +670,10 @@ fn help_lines() -> Vec<String> {
         "  space           play / pause",
         "  ←/→, h/l        seek by the small step",
         "  Ctrl-←/→, C-h/l seek by the large step",
+        "  g / G           seek to the start / end of the file",
         "  ↑/↓, k/j        volume up / down",
         "  e               EDIT mode          m   METADATA mode",
-        "  Esc             back to BROWSE",
+        "  Esc, q          back to BROWSE",
         "",
         "EDIT",
         "  ←/→, h/l        move the active marker (fine step)",
@@ -677,12 +684,12 @@ fn help_lines() -> Vec<String> {
         "  a               recalculate automatic markers",
         "  r               reset markers to the whole file",
         "  p               play from the active marker",
-        "  Esc             back to PLAY",
+        "  Esc, q          back to PLAY",
         "",
         "METADATA",
         "  j/k             next / previous field",
         "  Enter or i      edit the field       u   revert the field",
-        "  Esc             back to PLAY",
+        "  Esc, q          back to PLAY",
         "",
         "COMMANDS",
         "  :w              save in place        :q   leave    :wq  save and leave",

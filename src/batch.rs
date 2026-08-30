@@ -10,7 +10,7 @@
 use std::sync::mpsc::Sender;
 
 use crate::config::Config;
-use crate::media::probe::MediaInfo;
+use crate::media::probe::{MediaInfo, SkippedFile};
 use crate::media::{autotrim, ffmpeg};
 use crate::timespec::format_timestamp;
 
@@ -178,20 +178,38 @@ pub enum Progress {
 }
 
 /// Process every file, reporting progress through `emit`.
+///
+/// `skipped` are candidates that were found while scanning the folder but
+/// could not be probed at all (design §17: every file must be accounted for
+/// in the report, not just the ones that were successfully opened).
 pub fn run(
     files: &[MediaInfo],
+    skipped: &[SkippedFile],
     config: &Config,
     mode: RunMode,
     mut emit: impl FnMut(Progress),
 ) -> BatchReport {
     emit(Progress::Started {
-        total: files.len(),
+        total: files.len() + skipped.len(),
         mode,
     });
     let mut report = BatchReport::new(mode);
+    let mut number = 0;
 
-    for (index, info) in files.iter().enumerate() {
-        let item = process_one(index + 1, info, config, mode);
+    for file in skipped {
+        number += 1;
+        let item = BatchItem {
+            number,
+            name: file.name.clone(),
+            status: ItemStatus::Skipped(file.reason.clone()),
+        };
+        report.items.push(item.clone());
+        emit(Progress::Item(item));
+    }
+
+    for info in files {
+        number += 1;
+        let item = process_one(number, info, config, mode);
         report.items.push(item.clone());
         emit(Progress::Item(item));
     }
@@ -268,9 +286,15 @@ fn process_one(number: usize, info: &MediaInfo, config: &Config, mode: RunMode) 
 }
 
 /// Run a batch on a worker thread, streaming progress to `tx`.
-pub fn spawn(files: Vec<MediaInfo>, config: Config, mode: RunMode, tx: Sender<Progress>) {
+pub fn spawn(
+    files: Vec<MediaInfo>,
+    skipped: Vec<SkippedFile>,
+    config: Config,
+    mode: RunMode,
+    tx: Sender<Progress>,
+) {
     std::thread::spawn(move || {
-        run(&files, &config, mode, |progress| {
+        run(&files, &skipped, &config, mode, |progress| {
             // A closed channel means the UI moved on; stop reporting.
             let _ = tx.send(progress);
         });
@@ -390,5 +414,17 @@ mod tests {
         assert_eq!(RunMode::DryRun.label(), "dry run");
         assert!(RunMode::DryRun.is_dry_run());
         assert!(!RunMode::Apply.is_dry_run());
+    }
+
+    #[test]
+    fn unprobable_files_are_counted_as_skipped_not_dropped() {
+        let skipped = vec![SkippedFile {
+            name: "corrupt.mp3".to_string(),
+            reason: "no audio stream".to_string(),
+        }];
+        let report = run(&[], &skipped, &Config::default(), RunMode::Apply, |_| {});
+        assert_eq!(report.processed(), 1, "the unprobable file must still count");
+        assert_eq!(report.skipped(), 1);
+        assert_eq!(report.items[0].line(), "01 corrupt.mp3   SKIPPED: no audio stream");
     }
 }

@@ -140,6 +140,9 @@ pub fn parse_duration(input: &str) -> Result<f64, String> {
                 .trim()
                 .parse()
                 .map_err(|_| format!("invalid time: {s}"))?;
+            if !v.is_finite() {
+                return Err(format!("invalid time: {s}"));
+            }
             if v < 0.0 {
                 return Err(format!("negative component in time: {s}"));
             }
@@ -168,6 +171,9 @@ pub fn parse_duration(input: &str) -> Result<f64, String> {
                 continue;
             }
             if let Ok(v) = body.parse::<f64>() {
+                if !v.is_finite() {
+                    return Err(format!("invalid duration: {s}"));
+                }
                 if v < 0.0 {
                     return Err(format!("negative duration: {s}"));
                 }
@@ -259,6 +265,21 @@ mod tests {
         assert!(parse_pos("abc").is_err());
         assert!(parse_pos("120%").is_err());
         assert!(parse_duration("-5s").is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_values() {
+        assert!(parse_pos("nan").is_err());
+        assert!(parse_pos("inf").is_err());
+        assert!(parse_pos("-inf").is_err());
+        assert!(parse_pos("+nan").is_err());
+        assert!(parse_pos("-nan").is_err());
+        assert!(parse_pos("+inf").is_err());
+        assert!(parse_pos("nan%").is_err());
+        assert!(parse_pos("inf%").is_err());
+        assert!(parse_duration("nan").is_err());
+        assert!(parse_duration("infs").is_err());
+        assert!(parse_duration("1:nan").is_err());
     }
 
     #[test]

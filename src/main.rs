@@ -37,10 +37,11 @@ fn main() -> Result<()> {
     let (mut config, config_path) = Config::load(cli.config.as_deref())?;
     config.apply(&cli.overrides())?;
 
-    let files = probe::scan_folder(&folder)?;
+    let scan = probe::scan_folder_detailed(&folder)?;
+    let files = scan.files;
 
     if cli.is_batch_run() {
-        return run_batch(&cli, &folder, &files, &config);
+        return run_batch(&cli, &folder, &files, &scan.skipped, &config);
     }
 
     if let Some(path) = config_path {
@@ -53,7 +54,7 @@ fn main() -> Result<()> {
     } else {
         AudioOutput::open()
     };
-    run_tui(App::new(folder, files, config, output))
+    run_tui(App::new(folder, files, scan.skipped, config, output))
 }
 
 /// The interactive application.
@@ -93,14 +94,20 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
 }
 
 /// `--apply-defaults` / `--dry-run` without the TUI (design §17).
-fn run_batch(cli: &Cli, folder: &Path, files: &[probe::MediaInfo], config: &Config) -> Result<()> {
+fn run_batch(
+    cli: &Cli,
+    folder: &Path,
+    files: &[probe::MediaInfo],
+    skipped: &[probe::SkippedFile],
+    config: &Config,
+) -> Result<()> {
     let mode = if cli.dry_run {
         RunMode::DryRun
     } else {
         RunMode::Apply
     };
 
-    if files.is_empty() {
+    if files.is_empty() && skipped.is_empty() {
         println!(
             "No supported audio files were found in {}.",
             folder.display()
@@ -108,13 +115,13 @@ fn run_batch(cli: &Cli, folder: &Path, files: &[probe::MediaInfo], config: &Conf
         return Ok(());
     }
 
-    if mode == RunMode::Apply && !confirm(cli, files.len(), config)? {
+    if mode == RunMode::Apply && !confirm(cli, files.len(), skipped.len(), config)? {
         println!("Cancelled. No files were modified.");
         return Ok(());
     }
 
     println!();
-    let report = batch::run(files, config, mode, |progress| {
+    let report = batch::run(files, skipped, config, mode, |progress| {
         if let batch::Progress::Item(item) = progress {
             println!("{}", item.line());
             let _ = std::io::stdout().flush();
@@ -134,11 +141,15 @@ fn run_batch(cli: &Cli, folder: &Path, files: &[probe::MediaInfo], config: &Conf
 }
 
 /// Confirmation before a destructive folder-wide run (design §17).
-fn confirm(cli: &Cli, count: usize, config: &Config) -> Result<bool> {
+fn confirm(cli: &Cli, count: usize, skipped_count: usize, config: &Config) -> Result<bool> {
     let auto = &config.auto_trim;
     println!("Apply automatic trim to {count} files?");
     println!();
     println!("Folder contents are rewritten in place.");
+    if skipped_count > 0 {
+        println!();
+        println!("{skipped_count} file(s) could not be read and will be reported as skipped.");
+    }
     println!();
     println!("Threshold:");
     println!("  begin {} dB", auto.begin_threshold_db);

@@ -11,7 +11,7 @@ use crate::batch::{self, BatchItem, BatchReport, Progress, RunMode};
 use crate::config::Config;
 use crate::media::autotrim::{self, TrimSuggestion};
 use crate::media::ffmpeg::{self, SaveOutcome, SaveRequest};
-use crate::media::probe::{self, MediaInfo, METADATA_FIELDS};
+use crate::media::probe::{self, MediaInfo, SkippedFile, METADATA_FIELDS};
 use crate::media::waveform::{self, Waveform};
 use crate::player::{AudioOutput, AudioPlayer};
 use crate::timespec::{format_timestamp, Marker};
@@ -215,6 +215,9 @@ pub struct Session {
     pub field_index: usize,
     /// Whether automatic markers have been requested for this session.
     auto_requested: bool,
+    /// Set by an explicit recalculation request: the next suggestion should
+    /// replace the current markers even if they were manually edited.
+    override_next_suggestion: bool,
 }
 
 impl Session {
@@ -248,6 +251,7 @@ impl Session {
             fields,
             field_index: 0,
             auto_requested: false,
+            override_next_suggestion: false,
         };
         session.start_waveform();
         session
@@ -310,14 +314,17 @@ impl Session {
         self.auto = Analysis::Running(rx);
     }
 
-    /// Adopt a detected suggestion, unless the user has already moved markers.
+    /// Adopt a detected suggestion, unless the user has already moved markers
+    /// (an explicit recalculation request overrides that once).
     fn adopt_suggestion(&mut self, suggestion: TrimSuggestion) {
-        if self.markers_dirty {
+        let forced = std::mem::take(&mut self.override_next_suggestion);
+        if self.markers_dirty && !forced {
             return;
         }
         let duration = self.duration();
         self.begin = Marker::absolute(suggestion.begin, duration);
         self.end = Marker::absolute(suggestion.end, duration);
+        self.markers_dirty = false;
     }
 
     fn marker(&self, kind: MarkerKind) -> &Marker {
@@ -404,6 +411,9 @@ pub struct App {
     pub config: Config,
     pub folder: PathBuf,
     pub files: Vec<MediaInfo>,
+    /// Candidates found while scanning the folder that could not be probed
+    /// successfully, so folder-wide runs can still account for them.
+    pub skipped: Vec<SkippedFile>,
     pub selected: usize,
     pub mode: Mode,
     pub overlay: Overlay,
@@ -426,16 +436,26 @@ pub struct App {
     volume: f64,
     pending_g: bool,
     save_rx: Option<Receiver<Result<SaveOutcome, String>>>,
-    /// Set when a save should be followed by leaving the file.
-    save_then_close: bool,
+    /// Set when a save should be followed by continuing to this navigation
+    /// target, so "save, then go where I was headed" actually gets there.
+    pending_nav_after_save: Option<PendingNav>,
+    refresh_rx: Option<Receiver<Result<(usize, MediaInfo), String>>>,
+    rescan_rx: Option<Receiver<Result<probe::ScanResult, String>>>,
 }
 
 impl App {
-    pub fn new(folder: PathBuf, files: Vec<MediaInfo>, config: Config, output: AudioOutput) -> App {
+    pub fn new(
+        folder: PathBuf,
+        files: Vec<MediaInfo>,
+        skipped: Vec<SkippedFile>,
+        config: Config,
+        output: AudioOutput,
+    ) -> App {
         App {
             config,
             folder,
             files,
+            skipped,
             selected: 0,
             mode: Mode::Browse,
             overlay: Overlay::Warning,
@@ -453,7 +473,9 @@ impl App {
             volume: 100.0,
             pending_g: false,
             save_rx: None,
-            save_then_close: false,
+            pending_nav_after_save: None,
+            refresh_rx: None,
+            rescan_rx: None,
         }
     }
 
@@ -521,6 +543,8 @@ impl App {
 
         changed |= self.poll_save();
         changed |= self.poll_batch();
+        changed |= self.poll_refresh();
+        changed |= self.poll_rescan();
         changed
     }
 
@@ -542,13 +566,12 @@ impl App {
                 let lines = outcome.summary_lines();
                 self.refresh_after_save();
                 self.overlay = Overlay::Summary(lines);
-                if self.save_then_close {
-                    self.save_then_close = false;
-                    self.close_file();
+                if let Some(nav) = self.pending_nav_after_save.take() {
+                    self.perform_nav(nav);
                 }
             }
             Err(err) => {
-                self.save_then_close = false;
+                self.pending_nav_after_save = None;
                 self.fail(
                     "Could not save the file.\n\nThe original file has NOT been modified.",
                     err,
@@ -599,6 +622,16 @@ impl App {
         // Files on disk changed, so durations and tags must be re-read.
         if finished_run.is_some_and(|mode| !mode.is_dry_run()) {
             self.rescan_folder();
+            // Any open session describes the file as it was before the
+            // folder-wide rewrite; keeping it around risks a later `:w`
+            // reapplying stale marker offsets to the new file.
+            if self.session.is_some() {
+                self.close_file();
+                self.warn(
+                    "The open file may have been rewritten by the batch run. \
+                     Reopen it to continue editing.",
+                );
+            }
         }
         changed
     }
@@ -695,7 +728,22 @@ impl App {
         };
 
         match kind {
-            Kind::None | Kind::Working => {}
+            Kind::None => {}
+            Kind::Working => {
+                if matches!(key.code, KeyCode::Esc) {
+                    // The worker thread is left to finish (or fail) on its
+                    // own; the temporary-file/atomic-replace pipeline still
+                    // guarantees the original is untouched until it succeeds.
+                    // Its result, if any still arrives, is simply ignored.
+                    self.save_rx = None;
+                    self.pending_nav_after_save = None;
+                    self.overlay = Overlay::None;
+                    self.warn(
+                        "Stopped waiting. The save may still finish in the background; \
+                         the original file is safe either way.",
+                    );
+                }
+            }
             Kind::Dismissable => match key.code {
                 KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => self.overlay = Overlay::None,
                 _ => self.scroll_overlay_with(key),
@@ -725,8 +773,10 @@ impl App {
                 }
                 KeyCode::Char('w') => {
                     self.overlay = Overlay::None;
-                    // Saving first, then continuing where the user was headed.
-                    self.save_then_close = nav != PendingNav::Quit;
+                    // Saving first, then continuing to the intended target —
+                    // except Quit, which would otherwise end the program
+                    // before the save summary ever gets drawn.
+                    self.pending_nav_after_save = (nav != PendingNav::Quit).then_some(nav);
                     self.save_current();
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
@@ -848,7 +898,7 @@ impl App {
         let step = self.config.playback.volume_step;
 
         match key.code {
-            KeyCode::Esc => self.request_nav(PendingNav::CloseFile),
+            KeyCode::Esc | KeyCode::Char('q') => self.request_nav(PendingNav::CloseFile),
             KeyCode::Char(' ') => self.with_player(AudioPlayer::toggle),
             KeyCode::Left | KeyCode::Char('h') => {
                 let delta = if ctrl { -large } else { -small };
@@ -861,10 +911,7 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.change_volume(step),
             KeyCode::Down | KeyCode::Char('j') => self.change_volume(-step),
             KeyCode::Char('g') => self.with_player(|p| p.seek_to(0.0)),
-            KeyCode::Char('G') => self.with_player(|p| {
-                let end = p.duration();
-                p.seek_to((end - 5.0).max(0.0));
-            }),
+            KeyCode::Char('G') => self.with_player(|p| p.seek_to(p.duration())),
             KeyCode::Char('e') => self.enter_edit_mode(),
             KeyCode::Char('m') => self.mode = Mode::Metadata,
             KeyCode::Char(':') => {
@@ -886,7 +933,7 @@ impl App {
         };
 
         match key.code {
-            KeyCode::Esc => self.mode = Mode::Play,
+            KeyCode::Esc | KeyCode::Char('q') => self.mode = Mode::Play,
             KeyCode::Left | KeyCode::Char('h') => {
                 self.nudge_marker(active, if ctrl { -large } else { -fine })
             }
@@ -931,7 +978,7 @@ impl App {
         let last = METADATA_FIELDS.len().saturating_sub(1);
 
         match key.code {
-            KeyCode::Esc => self.mode = Mode::Play,
+            KeyCode::Esc | KeyCode::Char('q') => self.mode = Mode::Play,
             KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(session) = &mut self.session {
                     session.field_index = (session.field_index + 1).min(last);
@@ -1009,8 +1056,13 @@ impl App {
         }
         let config = self.config.clone();
         if let Some(session) = &mut self.session {
-            // Let the fresh suggestion win over anything set so far.
-            session.markers_dirty = false;
+            // The fresh suggestion should win once it lands, even over
+            // manually-edited markers — but until then, the markers on
+            // screen are still whatever they were, so `dirty` must stay
+            // truthful (clearing it early would let a navigation away
+            // silently skip the discard-confirmation while a real, still
+            // unsaved edit is on screen).
+            session.override_next_suggestion = true;
             session.auto_requested = false;
             session.start_auto_markers(&config);
         }
@@ -1096,8 +1148,16 @@ impl App {
                 self.perform_nav(target);
             }
             "wq" | "x" => {
-                self.save_then_close = self.session.is_some();
-                self.save_current();
+                if self.session.as_ref().is_some_and(|s| !s.is_dirty()) {
+                    // Nothing to write; matches vim's `:x`, which only
+                    // writes a modified buffer. A bare `:w` on an unchanged
+                    // file still runs the full pipeline to report NO-OP
+                    // explicitly (design §16).
+                    self.close_file();
+                } else {
+                    self.pending_nav_after_save = Some(PendingNav::CloseFile);
+                    self.save_current();
+                }
             }
             "help" | "h" => self.overlay = Overlay::Help,
             "apply-defaults" => {
@@ -1274,6 +1334,9 @@ impl App {
     }
 
     /// Re-read the saved file so durations, tags and markers reflect disk.
+    ///
+    /// Probing shells out to ffprobe, so this runs on a worker thread rather
+    /// than blocking the render loop; see [`App::poll_refresh`].
     fn refresh_after_save(&mut self) {
         let Some((index, path)) = self
             .session
@@ -1282,22 +1345,81 @@ impl App {
         else {
             return;
         };
-        let Ok(Some(info)) = probe::probe(&path) else {
-            return;
-        };
-        if let Some(slot) = self.files.get_mut(index) {
-            *slot = info.clone();
-        }
-        // Rebuild the session against the new file: the audio, waveform and
-        // markers all describe the previous contents otherwise.
-        self.session = Some(Session::new(index, info, &self.output, self.volume));
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let result = probe::probe(&path)
+                .map_err(|e| format!("{e:#}"))
+                .and_then(|info| {
+                    info.ok_or_else(|| "the file no longer has an audio stream".to_string())
+                })
+                .map(|info| (index, info));
+            let _ = tx.send(result);
+        });
+        self.refresh_rx = Some(rx);
     }
 
+    fn poll_refresh(&mut self) -> bool {
+        let Some(rx) = &self.refresh_rx else {
+            return false;
+        };
+        let received = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the file refresh worker stopped unexpectedly".to_string())
+            }
+        };
+        self.refresh_rx = None;
+        match received {
+            Ok((index, info)) => {
+                if let Some(slot) = self.files.get_mut(index) {
+                    *slot = info.clone();
+                }
+                // Rebuild the session against the new file: the audio,
+                // waveform and markers all describe the previous contents
+                // otherwise. Skipped if the user has since closed or moved
+                // on to a different file.
+                if self.session.as_ref().is_some_and(|s| s.index == index) {
+                    self.session = Some(Session::new(index, info, &self.output, self.volume));
+                }
+            }
+            Err(err) => self.warn(format!("Could not refresh the saved file: {err}")),
+        }
+        true
+    }
+
+    /// Rescan the folder on a worker thread; scanning shells out to ffprobe
+    /// once per file, which would otherwise stall the render loop.
     pub fn rescan_folder(&mut self) {
-        let current = self.current().map(|f| f.path.clone());
-        match probe::scan_folder(&self.folder) {
-            Ok(files) => {
-                self.files = files;
+        if self.rescan_rx.is_some() {
+            return;
+        }
+        let folder = self.folder.clone();
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let result = probe::scan_folder_detailed(&folder).map_err(|e| format!("{e:#}"));
+            let _ = tx.send(result);
+        });
+        self.rescan_rx = Some(rx);
+    }
+
+    fn poll_rescan(&mut self) -> bool {
+        let Some(rx) = &self.rescan_rx else {
+            return false;
+        };
+        let received = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the folder scan worker stopped unexpectedly".to_string())
+            }
+        };
+        self.rescan_rx = None;
+        match received {
+            Ok(scan) => {
+                let current = self.current().map(|f| f.path.clone());
+                self.files = scan.files;
+                self.skipped = scan.skipped;
                 if let Some(index) =
                     current.and_then(|path| self.files.iter().position(|f| f.path == path))
                 {
@@ -1305,26 +1427,41 @@ impl App {
                 }
                 self.selected = self.selected.min(self.files.len().saturating_sub(1));
             }
-            Err(err) => self.warn(format!("Could not rescan folder: {err:#}")),
+            Err(err) => self.warn(format!("Could not rescan folder: {err}")),
         }
+        true
     }
 
     // ---- folder-wide runs -------------------------------------------------
 
     fn start_batch(&mut self, mode: RunMode) {
-        if self.files.is_empty() {
+        if self.files.is_empty() && self.skipped.is_empty() {
             self.warn("No audio files in this folder.");
             self.overlay = Overlay::None;
+            return;
+        }
+        // A real run rewrites files on disk, including the one open for
+        // editing; refuse rather than silently discarding unsaved markers or
+        // metadata (design: "unsaved changes must not be silently discarded").
+        if !mode.is_dry_run() && self.session.as_ref().is_some_and(Session::is_dirty) {
+            self.overlay = Overlay::None;
+            self.warn("Save or discard changes to the open file before applying to the whole folder.");
             return;
         }
         // Playback holds a decoder open on one of these files.
         self.with_player(AudioPlayer::pause);
 
         let (tx, rx) = channel();
-        batch::spawn(self.files.clone(), self.config.clone(), mode, tx);
+        batch::spawn(
+            self.files.clone(),
+            self.skipped.clone(),
+            self.config.clone(),
+            mode,
+            tx,
+        );
         self.overlay = Overlay::Batch(BatchView {
             mode,
-            total: self.files.len(),
+            total: self.files.len() + self.skipped.len(),
             items: Vec::new(),
             report: None,
             scroll: 0,
@@ -1335,7 +1472,7 @@ impl App {
     /// The confirmation text shown before a folder-wide run (design §17).
     pub fn apply_confirmation_lines(&self) -> Vec<String> {
         let auto = &self.config.auto_trim;
-        vec![
+        let mut lines = vec![
             format!("Apply automatic trim to {} files?", self.files.len()),
             String::new(),
             "Threshold:".to_string(),
@@ -1348,9 +1485,17 @@ impl App {
             String::new(),
             "Applying rewrites every file in place.".to_string(),
             "A dry run reports what would change without writing anything.".to_string(),
-            String::new(),
-            "[Enter] apply    [d] dry run    [Esc] cancel".to_string(),
-        ]
+        ];
+        if !self.skipped.is_empty() {
+            lines.push(String::new());
+            lines.push(format!(
+                "{} file(s) could not be read and will be reported as skipped.",
+                self.skipped.len()
+            ));
+        }
+        lines.push(String::new());
+        lines.push("[Enter] apply    [d] dry run    [Esc] cancel".to_string());
+        lines
     }
 
     /// One row per file for the browse list (design §5).
@@ -1394,6 +1539,7 @@ mod tests {
         App::new(
             PathBuf::from("/rec"),
             files,
+            Vec::new(),
             Config::default(),
             AudioOutput::silent(),
         )
@@ -1665,6 +1811,118 @@ mod tests {
     }
 
     #[test]
+    fn q_behaves_like_esc_in_play_edit_and_metadata_modes() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e'));
+        assert_eq!(app.mode, Mode::Edit);
+        press(&mut app, KeyCode::Char('q'));
+        assert_eq!(app.mode, Mode::Play, "q in EDIT should behave like Esc");
+
+        press(&mut app, KeyCode::Char('m'));
+        assert_eq!(app.mode, Mode::Metadata);
+        press(&mut app, KeyCode::Char('q'));
+        assert_eq!(app.mode, Mode::Play, "q in METADATA should behave like Esc");
+
+        press(&mut app, KeyCode::Char('q'));
+        assert_eq!(app.mode, Mode::Browse, "q in PLAY should close the file like Esc");
+        assert!(app.session.is_none());
+    }
+
+    fn fake_save_outcome(path: &str) -> SaveOutcome {
+        SaveOutcome {
+            path: PathBuf::from(path),
+            noop: false,
+            source_duration: 600.0,
+            output_duration: 590.0,
+            removed_beginning: 5.0,
+            removed_ending: 5.0,
+            processing: ffmpeg::Processing::StreamCopy,
+            metadata: ffmpeg::MetadataReport::default(),
+        }
+    }
+
+    #[test]
+    fn choosing_save_in_the_discard_dialog_remembers_the_original_target() {
+        let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // dirty
+
+        app.selected = 1;
+        app.open_selected();
+        assert!(matches!(
+            app.overlay,
+            Overlay::ConfirmDiscard(PendingNav::Open(1))
+        ));
+
+        press(&mut app, KeyCode::Char('w'));
+        assert_eq!(app.pending_nav_after_save, Some(PendingNav::Open(1)));
+    }
+
+    #[test]
+    fn a_successful_save_continues_to_the_remembered_navigation_target() {
+        let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // opens a.opus, index 0
+
+        app.pending_nav_after_save = Some(PendingNav::Open(1));
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.save_rx = Some(rx);
+        tx.send(Ok(fake_save_outcome("/rec/a.opus"))).unwrap();
+        app.poll_save();
+
+        assert_eq!(
+            app.session.as_ref().map(|s| s.index),
+            Some(1),
+            "must continue to the file the user selected, not just close to BROWSE"
+        );
+        assert!(app.pending_nav_after_save.is_none());
+    }
+
+    #[test]
+    fn wq_on_an_unmodified_file_closes_without_running_the_save_pipeline() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.session.as_ref().unwrap().is_dirty());
+
+        app.run_command("wq");
+        assert!(app.session.is_none(), "should close immediately, like vim's :x");
+        assert!(app.save_rx.is_none(), "must not spawn the save pipeline for a no-op exit");
+    }
+
+    #[test]
+    fn wq_on_a_modified_file_still_saves() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // dirty
+        press(&mut app, KeyCode::Esc);
+
+        app.run_command("wq");
+        assert!(app.session.is_some(), "the file stays open while the save runs");
+        assert!(app.save_rx.is_some());
+        assert_eq!(app.pending_nav_after_save, Some(PendingNav::CloseFile));
+    }
+
+    #[test]
+    fn esc_during_working_overlay_stops_waiting_without_losing_the_original() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        let (_tx, rx) = std::sync::mpsc::channel::<Result<SaveOutcome, String>>();
+        app.save_rx = Some(rx);
+        app.overlay = Overlay::Working("Saving a.opus…".to_string());
+
+        press(&mut app, KeyCode::Esc);
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.save_rx.is_none());
+    }
+
+    #[test]
     fn metadata_fields_are_editable_and_track_changes() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
@@ -1766,6 +2024,68 @@ mod tests {
     }
 
     #[test]
+    fn apply_defaults_is_blocked_while_the_open_file_has_unsaved_edits() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // dirty marker edit
+        press(&mut app, KeyCode::Esc); // back to PLAY; session stays open and dirty
+
+        app.run_command("apply-defaults");
+        assert!(matches!(app.overlay, Overlay::ConfirmApply));
+        press(&mut app, KeyCode::Enter); // try to confirm the write
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.status.as_ref().unwrap().is_error);
+        assert!(
+            app.session.is_some(),
+            "the dirty session must not be silently overwritten by a folder-wide run"
+        );
+    }
+
+    #[test]
+    fn apply_defaults_dry_run_is_allowed_even_with_unsaved_edits() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l'));
+
+        app.run_command("apply-defaults --dry-run");
+        match &app.overlay {
+            Overlay::Batch(view) => assert_eq!(view.mode, RunMode::DryRun),
+            _ => panic!("expected a batch view"),
+        }
+        assert!(app.session.is_some());
+    }
+
+    #[test]
+    fn a_finished_apply_run_closes_the_open_session_to_avoid_stale_markers() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        assert!(app.session.is_some());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Progress::Finished(BatchReport::new(RunMode::Apply)))
+            .unwrap();
+        app.overlay = Overlay::Batch(BatchView {
+            mode: RunMode::Apply,
+            total: 1,
+            items: Vec::new(),
+            report: None,
+            scroll: 0,
+            rx: Some(rx),
+        });
+
+        app.poll_batch();
+        assert!(
+            app.session.is_none(),
+            "a session left open across a real batch run could later save stale markers"
+        );
+    }
+
+    #[test]
     fn a_save_error_says_the_original_is_untouched() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.fail(
@@ -1836,6 +2156,34 @@ mod tests {
             end_detected: true,
         });
         assert_eq!(session.begin.seconds(), 1.0, "manual edits win");
+    }
+
+    #[test]
+    fn recalculating_markers_keeps_dirty_true_until_the_suggestion_lands() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // manual nudge, now dirty
+        assert!(app.session.as_ref().unwrap().is_dirty());
+
+        press(&mut app, KeyCode::Char('a')); // recalculate
+        assert!(
+            app.session.as_ref().unwrap().is_dirty(),
+            "dirty must stay true until the new suggestion actually replaces the markers"
+        );
+
+        // Once the suggestion lands, it overrides the manual edit and the
+        // session is clean again.
+        let session = app.session.as_mut().unwrap();
+        session.adopt_suggestion(TrimSuggestion {
+            begin: 12.0,
+            end: 500.0,
+            begin_detected: true,
+            end_detected: true,
+        });
+        assert_eq!(session.begin.seconds(), 12.0);
+        assert!(!session.is_dirty());
     }
 
     #[test]
