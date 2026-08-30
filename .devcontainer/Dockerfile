@@ -8,10 +8,26 @@ RUN $(groupadd -g $GROUP_ID customgroup || true) && \
     useradd -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USERNAME
 
 # Install basic development tools, plus what audioedit needs:
-#   ffmpeg           the media backend (decoding, trimming, muxing, probing)
-#   libasound2-dev   ALSA headers, required to build the audio output backend
+#   ffmpeg              the media backend (decoding, trimming, muxing, probing)
+#   libasound2-dev      ALSA headers, required to build the audio output backend
+#   libasound2-plugins  the ALSA -> PulseAudio bridge, so playback can leave the
+#                       container (see "On macOS (Apple Silicon)" in the README)
+#   pulseaudio-utils    pactl/paplay, for checking that bridge by hand
 RUN apt update && apt install -y less man-db sudo \
-    ffmpeg libasound2-dev pkg-config
+    ffmpeg libasound2-dev pkg-config libasound2-plugins pulseaudio-utils
+
+# Send ALSA's default device to the PulseAudio server named by $PULSE_SERVER.
+# `fallback` keeps a real device working if one is ever passed through, and an
+# unreachable server is not fatal: audioedit reports no device and stays usable.
+RUN printf '%s\n' \
+    'pcm.!default {' \
+    '    type pulse' \
+    '    fallback "sysdefault"' \
+    '}' \
+    'ctl.!default {' \
+    '    type pulse' \
+    '    fallback "sysdefault"' \
+    '}' > /etc/asound.conf
 
 # Ensure default `node` user has access to `sudo`
 RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \

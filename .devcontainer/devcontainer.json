@@ -25,7 +25,15 @@
 	},
 	"containerEnv": {
 		"CLAUDE_CONFIG_DIR": "/opt/dot-agent/dot-claude",
+		// Play through a PulseAudio server on the host. Docker Desktop's VM has
+		// no sound hardware, so this is the only route out of the container --
+		// see "On macOS (Apple Silicon)" in the README for the host-side setup.
+		// Harmless when no server is running: audioedit just reports no device.
+		"PULSE_SERVER": "tcp:host.docker.internal:4713",
 	},
+	// `host.docker.internal` is not resolvable by default on a Linux Docker
+	// engine, and is what PULSE_SERVER above points at.
+	"runArgs": ["--add-host=host.docker.internal:host-gateway"],
 	"mounts": ["source=${localEnv:AGENT_HOME},target=/opt/dot-agent,type=bind"],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.

@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, Padding, Paragr
 use ratatui::Frame;
 
 use crate::app::{App, MarkerKind, Mode, Overlay, Session};
+use crate::media::first_line;
 use crate::media::probe::MediaInfo;
 use crate::timespec::format_timestamp;
 
@@ -99,12 +100,12 @@ fn render_browse(frame: &mut Frame, app: &mut App, area: Rect) {
     let name_width = (inner.width as usize).saturating_sub(20).max(10);
     let items: Vec<ListItem> = app
         .file_rows()
-        .into_iter()
+        .iter()
         .map(|(name, duration, format)| {
             ListItem::new(Line::from(vec![
                 Span::raw(format!(
                     "{:<width$} ",
-                    truncate(&name, name_width),
+                    truncate(name, name_width),
                     width = name_width
                 )),
                 Span::styled(format!("{duration:>8} "), Style::default().fg(Color::Gray)),
@@ -530,7 +531,7 @@ fn hint_text(app: &App) -> &'static str {
             "space play  h/l seek  C-h/C-l ±60s  g/G start/end  j/k volume  e edit  m metadata  :w save  Esc back"
         }
         Mode::Edit => {
-            "h/l move marker  C-h/C-l large  Tab switch  b/e set at cursor  B/E type +10s -1m 50%  a auto  :w save  Esc back"
+            "h/l move marker  C-h/C-l large  Tab switch  b/e set here  B/E/i type +10s -1m 50%  a auto  r reset both  :w save  Esc back"
         }
         Mode::Metadata => "j/k field  Enter edit  u revert  :w save  :wq save & leave  Esc back",
     }
@@ -651,10 +652,6 @@ fn warning_lines(app: &App) -> Vec<String> {
     lines
 }
 
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or(text)
-}
-
 fn help_lines() -> Vec<String> {
     [
         "BROWSE",
@@ -680,9 +677,12 @@ fn help_lines() -> Vec<String> {
         "  Ctrl-←/→, C-h/l move the active marker (large step)",
         "  Tab             switch between the beginning and ending marker",
         "  b / e           set the beginning / ending marker at the playhead",
-        "  B / E / i       type a position: 10:00, +10s, -1m, 50%",
+        "  B / E           type a position for the beginning / ending marker",
+        "  i               type a position for the active marker (see Tab)",
+        "                  all three accept: 10:00, +10s, -1m, 50%",
         "  a               recalculate automatic markers",
-        "  r               reset markers to the whole file",
+        "  r               reset BOTH markers to the whole file (see METADATA's",
+        "                  u, which reverts one field at a time, not everything)",
         "  p               play from the active marker",
         "  Esc, q          back to PLAY",
         "",

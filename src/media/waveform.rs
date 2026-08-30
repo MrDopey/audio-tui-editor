@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use super::{ffmpeg_bin, tail_of};
+use super::{ffmpeg_bin, missing_backend_hint, tail_of};
 
 /// Decode rate. Low enough to be quick on long files, high enough for a
 /// faithful amplitude envelope.
@@ -97,7 +97,13 @@ fn decode(path: &Path, duration: f64) -> Result<Waveform> {
         .stderr(Stdio::piped())
         .stdin(Stdio::null())
         .spawn()
-        .with_context(|| format!("decoding {} for waveform analysis", path.display()))?;
+        .with_context(|| {
+            format!(
+                "decoding {} for waveform analysis. {}",
+                path.display(),
+                missing_backend_hint(&ffmpeg_bin())
+            )
+        })?;
 
     let mut stdout = child.stdout.take().expect("stdout was piped");
 
@@ -282,7 +288,9 @@ fn write_cache(path: &Path, waveform: &Waveform) -> Result<()> {
         bytes.extend_from_slice(&rms.to_le_bytes());
     }
     // Write via a temporary so a crash cannot leave a truncated cache entry.
-    let tmp = path.with_extension("wf.tmp");
+    // The process id keeps two concurrent instances analysing the same file
+    // from racing on the same temporary path.
+    let tmp = path.with_extension(format!("wf.tmp.{}", std::process::id()));
     std::fs::write(&tmp, &bytes)?;
     std::fs::rename(&tmp, path)?;
     Ok(())

@@ -12,11 +12,10 @@ browse files → select file → play / inspect → edit trim markers → save i
 
 ## Architecture
 
-audioedit owns no codec logic. Every decode, probe, trim and mux is delegated
-to `ffmpeg`/`ffprobe`, and playback is handed to `rodio` once ffmpeg has
-decoded the stream to raw PCM. The terminal front end (`app` + `ui`) never
-blocks on analysis: waveform buckets are computed once per file in the
-background and cached on disk.
+audioedit owns no codec logic. Every decode, probe, trim and mux is delegated to
+`ffmpeg`/`ffprobe`, and playback is handed to `rodio` once ffmpeg has decoded the
+stream to raw PCM. Waveform buckets are computed in the background and cached on
+disk, so the front end never blocks on analysis.
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "primaryBackground": "#ffffff"}}}%%
@@ -32,17 +31,10 @@ graph LR
 
     FFMPEG --> FILES[(audio files<br/>on disk)]
     MEDIA --> CACHE[(waveform cache)]
-
-    subgraph Legend
-        L1[Rust module]
-        L2{{External process}}
-        L3[(On-disk data)]
-        L4[/Hardware/]
-    end
 ```
 
-Saving is the one operation that touches the user's originals, and it is
-staged so that a failure at any point is a no-op — see [Saving][3].
+Saving is the one operation that touches your originals, and it is staged so
+that a failure at any point is a no-op — see [Saving](#saving).
 
 ---
 
@@ -51,80 +43,48 @@ staged so that a failure at any point is a no-op — see [Saving][3].
 | Tool | Version | Notes |
 |------|---------|-------|
 | Rust toolchain | 1.98.0 | Edition 2021; the devcontainer pins `rust:1.98.0-trixie` |
-| `ffmpeg` | Any build on `PATH` | Does all decoding, trimming and muxing |
-| `ffprobe` | Any build on `PATH` | Determines which files are supported |
-| `libasound2-dev` | System package | ALSA headers, required to *build* the audio output backend |
-| `pkg-config` | System package | Locates the ALSA headers at build time |
+| `ffmpeg`, `ffprobe` | Any build on `PATH` | All decoding, trimming, muxing and support detection |
+| `libasound2-dev`, `pkg-config` | System packages | ALSA headers, required to *build* the output backend |
+| `libasound2-plugins` | System package | Only to hear container audio on the host — see [macOS](#macos-apple-silicon) |
 
-> Audio output is optional at runtime. Without a device, everything except
-> sound still works and the transport says so. Pass `--no-audio` to skip
-> opening a device entirely.
-
-The devcontainer installs all of the above; nothing else is required.
+The devcontainer installs all of these. Audio output is optional at runtime:
+without a device everything except sound still works and the transport says so,
+and `--no-audio` skips opening one entirely.
 
 ---
 
-## Installation
+## Quick start
 
 ```bash
-# Build the release binary
 cargo build --release
-
-# Confirm the toolchain and ffmpeg are both wired up
-./target/release/audioedit --help
+./target/release/audioedit --help                  # checks the toolchain and ffmpeg
+cargo run --release -- --folder ~/recordings       # defaults to the current directory
 ```
-
-There is no `.env` file — the only environment variables audioedit reads are
-the two optional binary overrides in [Configuration][5].
 
 ---
 
 ## Configuration
 
-### Environment variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `AUDIOEDIT_FFMPEG` | No | `ffmpeg` | Path to an alternative ffmpeg build |
-| `AUDIOEDIT_FFPROBE` | No | `ffprobe` | Path to an alternative ffprobe build |
-
-### Configuration file
-
-`$XDG_CONFIG_HOME/audioedit/config.toml` (or `--config <path>`). A missing file
-is not an error — the defaults below apply. Any section or key may be omitted,
-but an unknown key is rejected. `config.example.toml` in the repo root contains
-this same content, annotated.
-
-```toml
-[playback]
-small_seek_seconds = 10
-large_seek_seconds = 60
-volume_step = 5
-
-[editing]
-fine_step_seconds = 1
-large_step_seconds = 10
-
-[auto_trim]
-begin_threshold_db = -40
-end_threshold_db = -40
-begin_min_duration = 1
-end_min_duration = 1
-```
+`$XDG_CONFIG_HOME/audioedit/config.toml`, or `--config <path>`. A missing file
+is not an error, any key may be omitted, and an unknown key is rejected. Every
+value has a matching command-line flag, and the flag wins. `config.example.toml`
+is an annotated copy of the defaults below.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `playback.small_seek_seconds` | `10` | Seek amount for `←`/`→` and `h`/`l` |
 | `playback.large_seek_seconds` | `60` | Seek amount for `Ctrl-←`/`Ctrl-→` and `Ctrl-h`/`Ctrl-l` |
-| `playback.volume_step` | `5` | Percentage points added or removed by each volume key |
+| `playback.volume_step` | `5` | Percentage points per volume key |
 | `editing.fine_step_seconds` | `1` | Marker movement for `←`/`→` and `h`/`l` |
 | `editing.large_step_seconds` | `10` | Marker movement for `Ctrl-←`/`Ctrl-→` and `Ctrl-h`/`Ctrl-l` |
 | `auto_trim.begin_threshold_db` | `-40` | Level below which leading audio counts as silence, in dBFS |
 | `auto_trim.end_threshold_db` | `-40` | Level below which trailing audio counts as silence, in dBFS |
-| `auto_trim.begin_min_duration` | `1` | How long the leading silence must last to be trimmed, in seconds |
-| `auto_trim.end_min_duration` | `1` | How long the trailing silence must last to be trimmed, in seconds |
+| `auto_trim.begin_min_duration` | `1` | How long leading silence must last to be trimmed, in seconds |
+| `auto_trim.end_min_duration` | `1` | How long trailing silence must last to be trimmed, in seconds |
 
-Every value has a matching command-line flag, and the flag wins.
+The only environment variables read are `AUDIOEDIT_FFMPEG` and
+`AUDIOEDIT_FFPROBE`, which point at alternative ffmpeg builds. There is no
+`.env` file.
 
 ---
 
@@ -132,38 +92,61 @@ Every value has a matching command-line flag, and the flag wins.
 
 ### In the devcontainer (recommended)
 
-Open the repository in VS Code and choose **Reopen in Container**. The image
-([`.devcontainer/Dockerfile`][4]) provides the pinned
-Rust toolchain, `rust-analyzer`, `ffmpeg` and the ALSA build headers, so no
-host setup is needed. See the [dev container specification][1] for the format,
-and the [non-root user notes][2] for how the container user is derived from
-your local `USER`, `DEV_CONTAINER_USER_ID` and `DEV_CONTAINER_GROUP_ID`.
+Open the repository in VS Code and choose **Reopen in Container**; the image
+([`.devcontainer/Dockerfile`](.devcontainer/Dockerfile)) provides everything, so
+no host setup is needed. Run the binary from the integrated terminal — there are
+no VS Code tasks or launch configurations. See the
+[dev container specification](https://aka.ms/devcontainer.json) and the
+[non-root user notes](https://aka.ms/vscode-remote/containers/non-root), which
+cover how the container user is derived from your `USER`,
+`DEV_CONTAINER_USER_ID` and `DEV_CONTAINER_GROUP_ID`.
 
-There are no VS Code tasks or launch configurations — run the binary from the
-integrated terminal.
+### macOS (Apple Silicon)
 
-### Running the editor
+The devcontainer runs in Docker Desktop's Linux VM, which has no sound hardware:
+`/dev/snd` does not exist, so `--device /dev/snd` passthrough has nothing to
+forward. Two ways around it.
+
+**Build natively** — nothing in the crate is Linux-specific, and rodio uses
+CoreAudio on macOS, so this gets real audio with no added latency. Use it
+whenever you are judging trim points by ear.
 
 ```bash
-cargo run --release                                # the current directory
-cargo run --release -- --folder ~/recordings
+brew install ffmpeg
+cargo build --release --target aarch64-apple-darwin
 ```
 
-Configuration values can be overridden per run:
+That is the native triple, so plain `cargo build --release` builds the same
+binary — but name the target anyway. `target/` is bind-mounted into the
+devcontainer, so host and container builds otherwise collide in
+`target/release/` and force a full rebuild on every switch. A separate
+`CARGO_TARGET_DIR` works too. Cross-compiling to macOS *from* the devcontainer
+is not supported: linking needs Apple's SDK, where the CoreAudio and
+AudioToolbox frameworks live.
+
+**Or play the container's audio on the host.** The image carries the
+ALSA→PulseAudio bridge and points ALSA's default device at `$PULSE_SERVER`
+(`tcp:host.docker.internal:4713`, set in
+[`devcontainer.json`](.devcontainer/devcontainer.json)), so only the host side
+is left:
 
 ```bash
-audioedit \
-  --folder ~/recordings \
-  --begin-threshold-db -40 \
-  --end-threshold-db -40 \
-  --begin-min-duration 1 \
-  --end-min-duration 1
+brew install pulseaudio
+pulseaudio --exit-idle-time=-1 --daemonize \
+  --load="module-native-protocol-tcp listen=0.0.0.0 auth-ip-acl=127.0.0.1;172.17.0.0/16"
 ```
+
+Then `pactl info` in the container should report the host server. `172.17.0.0/16`
+is Docker's default bridge subnet; check yours with `ip route` if the connection
+is refused. Note that this adds roughly 100–300 ms of latency, and that
+`listen=0.0.0.0` exposes the server to your local network — the PulseAudio
+protocol permits recording as well as playback, so keep the macOS firewall on
+and the ACL no wider than the bridge subnet.
 
 ### Batch mode
 
-Apply the automatic trim policy to every supported file in a folder, without
-the TUI:
+Apply the automatic trim policy to a whole folder, without the TUI. Each file is
+processed independently: a failure on one is recorded and the run continues.
 
 ```bash
 audioedit --folder ~/recordings --apply-defaults          # asks first
@@ -171,10 +154,8 @@ audioedit --folder ~/recordings --apply-defaults --yes    # unattended
 audioedit --folder ~/recordings --dry-run                 # report only, writes nothing
 ```
 
-A dry run performs exactly the same silence detection as a real run and prints
-what each file *would* become, without modifying anything. `--dry-run` on its
-own implies a folder-wide dry run. Each file is processed independently: a
-failure on one is recorded and the run continues.
+A dry run performs the same silence detection as a real run and prints what each
+file *would* become.
 
 ### Command-line reference
 
@@ -187,22 +168,41 @@ failure on one is recorded and the run continues.
 | `--yes`, `-y` | Skip the confirmation prompt before a folder-wide run |
 | `--no-audio` | Do not open an audio device (browsing and editing still work) |
 
-Run `audioedit --help` for the full list, including the per-run overrides for
-every configuration value.
+`audioedit --help` lists the full set, including a per-run override for every
+configuration value.
 
 ---
 
 ## Modes
 
-```
-BROWSE  Enter → PLAY
-PLAY    e → EDIT    m → METADATA    Esc → BROWSE
-EDIT    Esc → PLAY
-METADATA Esc → PLAY
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "primaryBackground": "#ffffff"}}}%%
+stateDiagram-v2
+    direction LR
+    [*] --> BROWSE
+
+    BROWSE --> PLAY: Enter — open the file
+    PLAY --> BROWSE: Esc / q / :q — close the file
+
+    PLAY --> EDIT: e — auto-set markers
+    EDIT --> PLAY: Esc / q
+
+    PLAY --> METADATA: m
+    METADATA --> PLAY: Esc / q
+
+    BROWSE --> [*]: q
+
+    note right of PLAY
+        EDIT and METADATA both
+        return to PLAY, never
+        straight to BROWSE.
+    end note
 ```
 
-The mode is always shown in the top-left. A file with unsaved changes is
-marked `[+]`, and leaving it asks before discarding.
+The mode is always shown in the top-left. A file with unsaved changes is marked
+`[+]`, and leaving it asks before discarding. `q` behaves like `Esc` in every
+mode: it steps back one level rather than quitting, except in BROWSE where it
+exits.
 
 ### BROWSE
 
@@ -231,12 +231,13 @@ ffprobe recognises as audio appears and nothing else does.
 | `Esc` | back to BROWSE |
 
 The waveform covers the whole file, scales to the terminal width and shows the
-playback cursor in real time. Analysis runs once per file in the background and
-is cached on disk, so playback updates never recompute it.
+playback cursor in real time.
 
 ### EDIT
 
 Two markers define what is *kept*: everything between `beginning` and `ending`.
+On entering EDIT they are set automatically, moving past leading silence and
+stopping before trailing silence.
 
 | Key | Action |
 | --- | --- |
@@ -249,8 +250,9 @@ Two markers define what is *kept*: everything between `beginning` and `ending`.
 | `r` | reset to the whole file |
 | `p` | play from the active marker |
 
-Positions can be written relative to either end of the file, so you never have
-to work out an absolute timestamp:
+Positions can be relative to either end, so you never have to work out an
+absolute timestamp. For a ten-minute file `:b +10s` is `00:10` and `:e -10s` is
+`09:50`, and the expression stays on screen next to the timestamp it resolves to.
 
 ```
 +10s    10 seconds after the start
@@ -260,17 +262,10 @@ to work out an absolute timestamp:
 10:00   an absolute timestamp
 ```
 
-For a ten-minute file, `:b +10s` is `00:10` and `:e -10s` is `09:50`. The
-expression you wrote is kept on screen next to the timestamp it resolves to.
-
-On entering EDIT mode the markers are set automatically: the beginning moves
-past any leading silence and the ending stops before any trailing silence,
-using the configured thresholds and minimum durations.
-
 ### METADATA
 
-`j`/`k` move between fields, `Enter` or `i` edits one, `u` reverts it, and
-`:w` saves. Edited fields are highlighted until saved.
+`j`/`k` move between fields, `Enter` or `i` edits one, `u` reverts it, and `:w`
+saves. Edited fields are highlighted until saved.
 
 ### Commands
 
@@ -291,27 +286,24 @@ using the configured thresholds and minimum durations.
 
 ## Saving
 
-Saving is an in-place operation, and the original is only ever replaced by an
-atomic rename over a file that has already been produced and checked:
+Saving is in-place, and the original is only ever replaced by an atomic rename
+over a file that has already been produced and checked:
 
 ```
 source file → temporary output → media validation → metadata validation → atomic replacement
 ```
 
 If any step fails the original is left byte-for-byte untouched, the temporary
-file is removed, and the error dialog says so with the ffmpeg diagnostics
-behind `[Enter] details`.
+file is removed, and the error dialog says so with the ffmpeg diagnostics behind
+`[Enter] details`.
 
-Lossless stream copy is preferred. When copying cannot produce a valid file the
-audio is re-encoded with an explicit policy that keeps the source codec and
-bitrate, and the save summary always states which was used. (FLAC is the common
-case: ffmpeg copies the source `STREAMINFO`, so a stream-copied trim would
-declare the wrong length — audioedit rejects that and re-encodes, which is
-still lossless.)
-
-Metadata is compared field by field between the source and the finished file,
-and the summary reports exactly what survived. Nothing is claimed as preserved
-unless it is actually present in the output.
+Lossless stream copy is preferred; when copying cannot produce a valid file the
+audio is re-encoded keeping the source codec and bitrate, and the summary always
+states which was used. (FLAC is the common case: ffmpeg copies the source
+`STREAMINFO`, so a stream-copied trim would declare the wrong length — audioedit
+rejects that and re-encodes, which is still lossless.) Metadata is compared field
+by field against the finished file, so nothing is claimed as preserved unless it
+is actually in the output.
 
 ---
 
@@ -324,11 +316,10 @@ cargo clippy --all-targets
 cargo fmt
 ```
 
-The integration tests in `tests/pipeline.rs` build audio fixtures with ffmpeg
-and assert the guarantees that matter: originals survive failed saves, no-ops
-are reported and do not rewrite files, dry runs write nothing, and metadata
-claims match what is on disk. They shell out to a real `ffmpeg`, so the binary
-must be on `PATH` for the suite to pass.
+`tests/pipeline.rs` builds fixtures with a real `ffmpeg` (so it must be on
+`PATH`) and asserts the guarantees that matter: originals survive failed saves,
+no-ops do not rewrite files, dry runs write nothing, and metadata claims match
+what is on disk.
 
 ---
 
@@ -355,59 +346,53 @@ audio-tui-editor/
 ├── tests/pipeline.rs     # end-to-end tests against real audio
 ├── config.example.toml   # annotated copy of every default
 ├── design.md             # the design the source comments cite (design §N)
-└── .devcontainer/        # pinned Rust toolchain, ffmpeg, ALSA headers
+└── .devcontainer/        # pinned Rust toolchain, ffmpeg, ALSA headers, Pulse bridge
 ```
 
-The crate is deliberately split as a library plus a thin binary so the media
-pipeline can be exercised directly by the integration tests.
+The crate is split as a library plus a thin binary so the media pipeline can be
+exercised directly by the integration tests.
 
 ---
 
 ## Troubleshooting
 
-**`ffmpeg` or `ffprobe` not found**
+**`ffmpeg` or `ffprobe` not found** — both must be on `PATH`, or pointed at with
+`AUDIOEDIT_FFMPEG` / `AUDIOEDIT_FFPROBE`.
 
-Both must be on `PATH`. Install them, or point audioedit at a specific build
-with `AUDIOEDIT_FFMPEG` and `AUDIOEDIT_FFPROBE`.
-
-**The build fails looking for ALSA headers**
-
-Install `libasound2-dev` and `pkg-config`. These are build-time requirements
-of the audio output backend, and are needed even if you only ever run with
+**The build fails looking for ALSA headers** — install `libasound2-dev` and
+`pkg-config`. They are build-time requirements even if you only run
 `--no-audio`.
 
-**No sound, and the transport says there is no device**
+**No sound, and the transport says there is no device** — expected wherever no
+device is available, such as over SSH. Everything except sound still works.
 
-Expected when no audio device is available — for example over SSH or in a
-container without one passed through. Browsing, trimming, metadata editing and
-saving all still work.
+**No sound in the devcontainer on macOS** — audio has to reach a PulseAudio
+server on the host over TCP; see [macOS](#macos-apple-silicon). Check in order:
 
-**A file I expect to see is missing from BROWSE**
+```bash
+# In the container
+echo $PULSE_SERVER                      # tcp:host.docker.internal:4713
+getent hosts host.docker.internal       # must resolve
+pactl info                              # must reach the host server
 
-The listing is built by probing every file with ffprobe rather than by matching
-extensions. If ffprobe does not report an audio stream, the file is not shown.
+# On the Mac
+pactl list modules short | grep tcp     # module-native-protocol-tcp must be loaded
+lsof -nP -iTCP:4713 -sTCP:LISTEN        # must listen on *:4713, not 127.0.0.1:4713
+```
 
-**The waveform seems stale**
+A refused connection with the daemon running usually means `--load=` was ignored
+because a daemon was already up (`pulseaudio --kill` first), or that it bound
+only to loopback. Changes to `PULSE_SERVER` or `runArgs` need a container
+rebuild.
 
-Analysis is cached under the platform cache directory in
-`audioedit/waveform/`. The cache key includes the file path, modification time,
-size and analysis parameters, so an edited file re-analyses automatically.
-Delete that directory to force a full re-analysis.
+**A file I expect to see is missing from BROWSE** — the listing comes from
+ffprobe, not from extensions. If ffprobe reports no audio stream, the file is
+not shown.
+
+**The waveform seems stale** — analysis is cached under the platform cache
+directory in `audioedit/waveform/`, keyed on path, mtime, size and analysis
+parameters. Delete that directory to force a re-analysis.
 
 ---
 
-## References
-
-- [Dev container specification][1]
-- [Dev containers: non-root users][2]
-- [Design document][6] — the section numbers cited throughout the source
-
----
-
-<!-- References -->
-[1]: https://aka.ms/devcontainer.json
-[2]: https://aka.ms/vscode-remote/containers/non-root
-[3]: #saving
-[4]: .devcontainer/Dockerfile
-[5]: #configuration
-[6]: design.md
+[Design document](design.md) — the section numbers cited throughout the source.

@@ -8,7 +8,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use super::{ffprobe_bin, tail_of};
+use super::{ffprobe_bin, missing_backend_hint, tail_of};
 
 /// Metadata fields the application surfaces and tries to preserve (design §15).
 /// Keys are ffmpeg tag names, lowercased.
@@ -145,7 +145,13 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
         ])
         .arg(path)
         .output()
-        .with_context(|| format!("running ffprobe on {}", path.display()))?;
+        .with_context(|| {
+            format!(
+                "running ffprobe on {}. {}",
+                path.display(),
+                missing_backend_hint(&ffprobe_bin())
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

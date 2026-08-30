@@ -142,22 +142,9 @@ fn run_batch(
 
 /// Confirmation before a destructive folder-wide run (design §17).
 fn confirm(cli: &Cli, count: usize, skipped_count: usize, config: &Config) -> Result<bool> {
-    let auto = &config.auto_trim;
-    println!("Apply automatic trim to {count} files?");
-    println!();
-    println!("Folder contents are rewritten in place.");
-    if skipped_count > 0 {
-        println!();
-        println!("{skipped_count} file(s) could not be read and will be reported as skipped.");
+    for line in batch::confirmation_lines(count, skipped_count, &config.auto_trim) {
+        println!("{line}");
     }
-    println!();
-    println!("Threshold:");
-    println!("  begin {} dB", auto.begin_threshold_db);
-    println!("  end   {} dB", auto.end_threshold_db);
-    println!();
-    println!("Minimum duration:");
-    println!("  begin {}s", auto.begin_min_duration);
-    println!("  end   {}s", auto.end_min_duration);
     println!();
 
     if cli.yes {

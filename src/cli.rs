@@ -41,23 +41,48 @@ pub struct Cli {
     pub no_audio: bool,
 
     /// Seek amount for the arrow keys and h/l.
-    #[arg(long, value_name = "SECONDS", help_heading = "Playback")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Playback"
+    )]
     pub small_seek_seconds: Option<f64>,
 
     /// Seek amount for Ctrl-arrow and Ctrl-h/Ctrl-l.
-    #[arg(long, value_name = "SECONDS", help_heading = "Playback")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Playback"
+    )]
     pub large_seek_seconds: Option<f64>,
 
     /// Percentage points added or removed by each volume key.
-    #[arg(long, value_name = "PERCENT", help_heading = "Playback")]
+    #[arg(
+        long,
+        value_name = "PERCENT",
+        allow_negative_numbers = true,
+        help_heading = "Playback"
+    )]
     pub volume_step: Option<f64>,
 
     /// Marker movement for the arrow keys and h/l in EDIT mode.
-    #[arg(long, value_name = "SECONDS", help_heading = "Editing")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Editing"
+    )]
     pub fine_step_seconds: Option<f64>,
 
     /// Marker movement for Ctrl-arrow and Ctrl-h/Ctrl-l in EDIT mode.
-    #[arg(long, value_name = "SECONDS", help_heading = "Editing")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Editing"
+    )]
     pub large_step_seconds: Option<f64>,
 
     /// Level below which leading audio counts as silence, in dBFS.
@@ -79,11 +104,21 @@ pub struct Cli {
     pub end_threshold_db: Option<f64>,
 
     /// How long the leading silence must last to be trimmed, in seconds.
-    #[arg(long, value_name = "SECONDS", help_heading = "Automatic trim")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Automatic trim"
+    )]
     pub begin_min_duration: Option<f64>,
 
     /// How long the trailing silence must last to be trimmed, in seconds.
-    #[arg(long, value_name = "SECONDS", help_heading = "Automatic trim")]
+    #[arg(
+        long,
+        value_name = "SECONDS",
+        allow_negative_numbers = true,
+        help_heading = "Automatic trim"
+    )]
     pub end_min_duration: Option<f64>,
 }
 
@@ -171,5 +206,32 @@ mod tests {
         let overrides = parse(&["--begin-min-duration", "2"]).overrides();
         assert_eq!(overrides.begin_min_duration, Some(2.0));
         assert_eq!(overrides.end_min_duration, None);
+    }
+
+    /// A negative numeric flag must reach `Config::validate`'s clear message
+    /// rather than being rejected by clap as an "unexpected argument" before
+    /// it ever gets there.
+    #[test]
+    fn negative_numeric_flags_parse_so_validation_can_reject_them_clearly() {
+        for flag in [
+            "--small-seek-seconds",
+            "--large-seek-seconds",
+            "--volume-step",
+            "--fine-step-seconds",
+            "--large-step-seconds",
+            "--begin-min-duration",
+            "--end-min-duration",
+        ] {
+            let cli = Cli::try_parse_from(["audioedit", flag, "-5"])
+                .unwrap_or_else(|e| panic!("{flag} -5 should parse, got: {e}"));
+            let mut config = crate::config::Config::default();
+            let error = config
+                .apply(&cli.overrides())
+                .expect_err("a negative step/duration must be rejected by validation");
+            assert!(
+                format!("{error:#}").contains("must"),
+                "expected a clear validation message for {flag}, got: {error:#}"
+            );
+        }
     }
 }

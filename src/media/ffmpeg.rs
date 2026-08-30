@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use anyhow::{bail, Context, Result};
 
 use super::probe::{probe, MediaInfo, METADATA_FIELDS};
-use super::{ffmpeg_bin, tail_of};
+use super::{ffmpeg_bin, missing_backend_hint, tail_of};
 
 /// Trim boundaries closer together than this are treated as identical.
 const TIME_EPSILON: f64 = 0.02;
@@ -247,7 +247,8 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
     }
 
     let mut failures: Vec<String> = Vec::new();
-    for attempt in attempts {
+    let attempt_count = attempts.len();
+    for (index, attempt) in attempts.into_iter().enumerate() {
         let _ = std::fs::remove_file(&temp.path);
         match run_attempt(info, &temp.path, begin, span, &edits, attempt) {
             Ok(()) => {}
@@ -279,11 +280,13 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
 
         let metadata = compare_metadata(info, &output, &edits);
 
-        // Losing metadata is a reason to try a different strategy, but not a
-        // reason to fail outright once every strategy has been tried.
-        let report_is_clean = metadata.fully_preserved();
-        let is_last_resort = attempt.processing == Processing::Reencode && !attempt.all_streams;
-        if !report_is_clean && !is_last_resort && info.has_cover_art && attempt.all_streams {
+        // Losing metadata is a reason to try a different, more thorough
+        // strategy — but only while one remains untried. Accepting the first
+        // valid-but-lossy result would let a worse attempt (e.g. stream-copy
+        // audio-only, which drops cover art) win over a better one further
+        // down the list (e.g. re-encoding all streams) that was never tried.
+        let is_last_resort = index + 1 == attempt_count;
+        if should_retry_for_cleaner_metadata(&metadata, is_last_resort) {
             failures.push(format!(
                 "{}: {}",
                 describe(attempt),
@@ -294,7 +297,8 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
 
         std::fs::rename(&temp.path, &info.path).with_context(|| {
             format!(
-                "replacing {} with the verified temporary output",
+                "replacing {} with the verified temporary output. \
+                 The original file has NOT been modified.",
                 info.path.display()
             )
         })?;
@@ -317,6 +321,12 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
         info.path.display(),
         failures.join("\n")
     );
+}
+
+/// Whether the save loop should keep trying attempts further down the list
+/// instead of accepting `metadata` as the final result.
+fn should_retry_for_cleaner_metadata(metadata: &MetadataReport, is_last_resort: bool) -> bool {
+    !metadata.fully_preserved() && !is_last_resort
 }
 
 fn describe(attempt: Attempt) -> String {
@@ -381,7 +391,13 @@ fn run_attempt(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-        .with_context(|| format!("running ffmpeg for {}", info.path.display()))?;
+        .with_context(|| {
+            format!(
+                "running ffmpeg for {}. {}",
+                info.path.display(),
+                missing_backend_hint(&ffmpeg_bin())
+            )
+        })?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -723,6 +739,36 @@ mod tests {
     fn processing_labels_match_the_spec() {
         assert_eq!(Processing::StreamCopy.to_string(), "stream copy");
         assert_eq!(Processing::Reencode.to_string(), "re-encoding");
+    }
+
+    #[test]
+    fn a_lossy_result_is_retried_while_a_better_attempt_remains() {
+        let lossy = MetadataReport {
+            cover_art: CoverArt::Lost,
+            ..MetadataReport::default()
+        };
+        assert!(
+            should_retry_for_cleaner_metadata(&lossy, false),
+            "a stream-copy-audio-only result must not win over an untried \
+             reencode-all-streams attempt just because it came first"
+        );
+    }
+
+    #[test]
+    fn a_lossy_result_is_accepted_once_nothing_else_remains() {
+        let lossy = MetadataReport {
+            cover_art: CoverArt::Lost,
+            ..MetadataReport::default()
+        };
+        assert!(!should_retry_for_cleaner_metadata(&lossy, true));
+    }
+
+    #[test]
+    fn a_clean_result_is_never_retried() {
+        assert!(!should_retry_for_cleaner_metadata(
+            &MetadataReport::default(),
+            false
+        ));
     }
 }
 

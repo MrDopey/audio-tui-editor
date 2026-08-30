@@ -9,10 +9,38 @@
 
 use std::sync::mpsc::Sender;
 
-use crate::config::Config;
+use crate::config::{AutoTrim, Config};
 use crate::media::probe::{MediaInfo, SkippedFile};
-use crate::media::{autotrim, ffmpeg};
+use crate::media::{autotrim, ffmpeg, first_line};
 use crate::timespec::format_timestamp;
+
+/// The confirmation text shown before a folder-wide run (design §17), shared
+/// by the CLI's interactive prompt and the TUI's confirmation overlay so the
+/// two front ends can never describe the same run differently. Each caller
+/// appends its own footer (a keyboard hint, or an interactive prompt).
+pub fn confirmation_lines(count: usize, skipped_count: usize, auto: &AutoTrim) -> Vec<String> {
+    let mut lines = vec![
+        format!("Apply automatic trim to {count} files?"),
+        String::new(),
+        "Threshold:".to_string(),
+        format!("  begin {} dB", auto.begin_threshold_db),
+        format!("  end   {} dB", auto.end_threshold_db),
+        String::new(),
+        "Minimum duration:".to_string(),
+        format!("  begin {}s", auto.begin_min_duration),
+        format!("  end   {}s", auto.end_min_duration),
+        String::new(),
+        "Folder contents are rewritten in place.".to_string(),
+        "A dry run reports what would change without writing anything.".to_string(),
+    ];
+    if skipped_count > 0 {
+        lines.push(String::new());
+        lines.push(format!(
+            "{skipped_count} file(s) could not be read and will be reported as skipped."
+        ));
+    }
+    lines
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
@@ -97,10 +125,6 @@ impl BatchItem {
             }
         }
     }
-}
-
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or(text)
 }
 
 #[derive(Debug, Clone)]
@@ -414,6 +438,23 @@ mod tests {
         assert_eq!(RunMode::DryRun.label(), "dry run");
         assert!(RunMode::DryRun.is_dry_run());
         assert!(!RunMode::Apply.is_dry_run());
+    }
+
+    #[test]
+    fn confirmation_lines_report_thresholds_and_skipped_files() {
+        let lines = confirmation_lines(43, 2, &Config::default().auto_trim);
+        assert_eq!(lines[0], "Apply automatic trim to 43 files?");
+        assert!(lines.iter().any(|l| l.contains("begin -40 dB")));
+        assert!(lines.iter().any(|l| l.contains("rewritten in place")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("2 file(s) could not be read")));
+    }
+
+    #[test]
+    fn confirmation_lines_omit_the_skipped_note_when_there_is_nothing_to_skip() {
+        let lines = confirmation_lines(1, 0, &Config::default().auto_trim);
+        assert!(!lines.iter().any(|l| l.contains("could not be read")));
     }
 
     #[test]

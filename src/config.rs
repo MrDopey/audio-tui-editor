@@ -5,6 +5,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// Fields are `pub` for convenient read access throughout the app (and so
+/// tests can build one with a struct literal), but the only paths that
+/// should ever *construct or mutate* a `Config` are [`Config::load`] and
+/// [`Config::apply`] — both call [`Config::validate`] before returning, so a
+/// value read from `app`/`ui`/`batch` is always known-valid. If you find
+/// yourself writing `config.playback.foo = ...` outside this module, call
+/// [`Config::validate`] afterwards.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -123,7 +130,10 @@ impl Config {
         self.validate()
     }
 
-    fn validate(&self) -> Result<()> {
+    /// Re-check every field's constraints. Called automatically by
+    /// [`Config::load`] and [`Config::apply`]; exposed so any other code path
+    /// that mutates a `Config` directly can re-validate afterwards too.
+    pub fn validate(&self) -> Result<()> {
         let positives = [
             (
                 "playback.small_seek_seconds",
