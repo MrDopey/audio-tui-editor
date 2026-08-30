@@ -1,0 +1,24 @@
+# audioedit configuration.
+# Copy to $XDG_CONFIG_HOME/audioedit/config.toml, or pass with --config.
+# Every value shown here is the default; any section or key may be omitted.
+
+[playback]
+# Seek amounts for ←/→ (h/l) and Ctrl-←/Ctrl-→ (Ctrl-h/Ctrl-l).
+small_seek_seconds = 10
+large_seek_seconds = 60
+# Percentage points added or removed by ↑/↓ (k/j).
+volume_step = 5
+
+[editing]
+# Marker movement for ←/→ (h/l) and Ctrl-←/Ctrl-→ (Ctrl-h/Ctrl-l).
+fine_step_seconds = 1
+large_step_seconds = 10
+
+[auto_trim]
+# Level below which audio counts as silence, in dBFS. Beginning and ending
+# are configured independently.
+begin_threshold_db = -40
+end_threshold_db = -40
+# How long the level must stay below the threshold to count, in seconds.
+begin_min_duration = 1
+end_min_duration = 1
