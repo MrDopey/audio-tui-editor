@@ -69,8 +69,8 @@ impl Default for AutoTrim {
         AutoTrim {
             begin_threshold_db: -40.0,
             end_threshold_db: -40.0,
-            begin_min_duration: 1.0,
-            end_min_duration: 1.0,
+            begin_min_duration: 3.0,
+            end_min_duration: 5.0,
         }
     }
 }
@@ -207,8 +207,8 @@ mod tests {
         assert_eq!(c.editing.large_step_seconds, 10.0);
         assert_eq!(c.auto_trim.begin_threshold_db, -40.0);
         assert_eq!(c.auto_trim.end_threshold_db, -40.0);
-        assert_eq!(c.auto_trim.begin_min_duration, 1.0);
-        assert_eq!(c.auto_trim.end_min_duration, 1.0);
+        assert_eq!(c.auto_trim.begin_min_duration, 3.0);
+        assert_eq!(c.auto_trim.end_min_duration, 5.0);
     }
 
     #[test]
@@ -226,8 +226,8 @@ large_step_seconds = 10
 [auto_trim]
 begin_threshold_db = -40
 end_threshold_db = -40
-begin_min_duration = 1
-end_min_duration = 1
+begin_min_duration = 3
+end_min_duration = 5
 "#;
         let parsed: Config = toml::from_str(text).unwrap();
         assert_eq!(parsed, Config::default());

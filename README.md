@@ -79,8 +79,8 @@ is an annotated copy of the defaults below.
 | `editing.large_step_seconds` | `10` | Marker movement for `Ctrl-←`/`Ctrl-→` and `Ctrl-h`/`Ctrl-l` |
 | `auto_trim.begin_threshold_db` | `-40` | Level below which leading audio counts as silence, in dBFS |
 | `auto_trim.end_threshold_db` | `-40` | Level below which trailing audio counts as silence, in dBFS |
-| `auto_trim.begin_min_duration` | `1` | How long leading silence must last to be trimmed, in seconds |
-| `auto_trim.end_min_duration` | `1` | How long trailing silence must last to be trimmed, in seconds |
+| `auto_trim.begin_min_duration` | `3` | How long leading silence must last to be trimmed, in seconds |
+| `auto_trim.end_min_duration` | `5` | How long trailing silence must last to be trimmed, in seconds |
 
 The only environment variables read are `AUDIOEDIT_FFMPEG` and
 `AUDIOEDIT_FFPROBE`, which point at alternative ffmpeg builds. There is no

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::batch::OutputFormat;
 use crate::config::Overrides;
 
 #[derive(Debug, Parser)]
@@ -36,11 +37,15 @@ pub struct Cli {
     #[arg(long, short = 'y')]
     pub yes: bool,
 
+    /// How to print a folder-wide run's results.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table, value_name = "FORMAT")]
+    pub format: OutputFormat,
+
     /// Do not open an audio device (browsing and editing still work).
     #[arg(long)]
     pub no_audio: bool,
 
-    /// Seek amount for the arrow keys and h/l.
+    /// Seek amount for the arrow keys and h/l (default: 10s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -49,7 +54,7 @@ pub struct Cli {
     )]
     pub small_seek_seconds: Option<f64>,
 
-    /// Seek amount for Ctrl-arrow and Ctrl-h/Ctrl-l.
+    /// Seek amount for Ctrl-arrow and Ctrl-h/Ctrl-l (default: 60s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -58,7 +63,7 @@ pub struct Cli {
     )]
     pub large_seek_seconds: Option<f64>,
 
-    /// Percentage points added or removed by each volume key.
+    /// Percentage points added or removed by each volume key (default: 5%).
     #[arg(
         long,
         value_name = "PERCENT",
@@ -67,7 +72,7 @@ pub struct Cli {
     )]
     pub volume_step: Option<f64>,
 
-    /// Marker movement for the arrow keys and h/l in EDIT mode.
+    /// Marker movement for the arrow keys and h/l in EDIT mode (default: 1s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -76,7 +81,7 @@ pub struct Cli {
     )]
     pub fine_step_seconds: Option<f64>,
 
-    /// Marker movement for Ctrl-arrow and Ctrl-h/Ctrl-l in EDIT mode.
+    /// Marker movement for Ctrl-arrow and Ctrl-h/Ctrl-l in EDIT mode (default: 10s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -85,7 +90,7 @@ pub struct Cli {
     )]
     pub large_step_seconds: Option<f64>,
 
-    /// Level below which leading audio counts as silence, in dBFS.
+    /// Level below which leading audio counts as silence, in dBFS; exclusive (default: -40 dB).
     #[arg(
         long,
         value_name = "DB",
@@ -94,7 +99,7 @@ pub struct Cli {
     )]
     pub begin_threshold_db: Option<f64>,
 
-    /// Level below which trailing audio counts as silence, in dBFS.
+    /// Level below which trailing audio counts as silence, in dBFS; exclusive (default: -40 dB).
     #[arg(
         long,
         value_name = "DB",
@@ -103,7 +108,7 @@ pub struct Cli {
     )]
     pub end_threshold_db: Option<f64>,
 
-    /// How long the leading silence must last to be trimmed, in seconds.
+    /// How long the leading silence must last to be trimmed, in seconds; inclusive (default: 3s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -112,7 +117,7 @@ pub struct Cli {
     )]
     pub begin_min_duration: Option<f64>,
 
-    /// How long the trailing silence must last to be trimmed, in seconds.
+    /// How long the trailing silence must last to be trimmed, in seconds; inclusive (default: 5s).
     #[arg(
         long,
         value_name = "SECONDS",
@@ -156,6 +161,33 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    /// Every override flag documents its effective default in `--help`. This
+    /// reads the value straight from [`crate::config::Config::default`], so
+    /// it fails the moment a config default changes without the help text
+    /// being updated to match.
+    #[test]
+    fn help_documents_each_overrides_config_default() {
+        let help = Cli::command().render_long_help().to_string();
+        let defaults = crate::config::Config::default();
+        for value in [
+            defaults.playback.small_seek_seconds,
+            defaults.playback.large_seek_seconds,
+            defaults.playback.volume_step,
+            defaults.editing.fine_step_seconds,
+            defaults.editing.large_step_seconds,
+            defaults.auto_trim.begin_threshold_db,
+            defaults.auto_trim.end_threshold_db,
+            defaults.auto_trim.begin_min_duration,
+            defaults.auto_trim.end_min_duration,
+        ] {
+            let needle = format!("default: {value}");
+            assert!(
+                help.contains(&needle),
+                "--help is missing `{needle}`:\n{help}"
+            );
+        }
     }
 
     #[test]

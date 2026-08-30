@@ -42,7 +42,8 @@ impl Workspace {
         &self.0
     }
 
-    /// Write a fixture: 2 s of silence, 6 s of tone, 3 s of silence.
+    /// Write a fixture: 4 s of silence, 6 s of tone, 7 s of silence. The
+    /// silences comfortably clear the default min durations (3s / 5s).
     fn make(&self, name: &str, codec: &[&str]) -> PathBuf {
         let out = self.0.join(name);
         let mut command = Command::new("ffmpeg");
@@ -53,7 +54,7 @@ impl Workspace {
             "-f",
             "lavfi",
             "-i",
-            "aevalsrc='0.5*sin(2*PI*440*t)*between(t,2,8)':s=48000:d=11:c=stereo",
+            "aevalsrc='0.5*sin(2*PI*440*t)*between(t,4,10)':s=48000:d=17:c=stereo",
         ]);
         command.args(codec);
         for (key, value) in TAGS {
@@ -137,7 +138,7 @@ fn scanning_finds_audio_in_every_supported_format_and_skips_the_rest() {
         vec!["pcm_s16le", "flac", "mp3", "opus", "aac", "vorbis"]
     );
     for file in &files {
-        assert!((file.duration - 11.0).abs() < 0.2, "{}", file.file_name());
+        assert!((file.duration - 17.0).abs() < 0.2, "{}", file.file_name());
     }
 }
 
@@ -165,12 +166,12 @@ fn automatic_markers_find_the_leading_and_trailing_silence() {
 
     assert!(suggestion.begin_detected && suggestion.end_detected);
     assert!(
-        (suggestion.begin - 2.0).abs() < 0.3,
+        (suggestion.begin - 4.0).abs() < 0.3,
         "begin was {}",
         suggestion.begin
     );
     assert!(
-        (suggestion.end - 8.0).abs() < 0.3,
+        (suggestion.end - 10.0).abs() < 0.3,
         "end was {}",
         suggestion.end
     );
@@ -197,15 +198,15 @@ fn thresholds_are_configurable_independently() {
 
     let mut config = Config::default().auto_trim;
     // A minimum duration longer than the trailing silence suppresses it.
-    config.end_min_duration = 5.0;
+    config.end_min_duration = 8.0;
     let suggestion = autotrim::detect(&path, info.duration, &config).expect("detecting");
     assert!(
         suggestion.begin_detected,
-        "the 2s leading silence still qualifies"
+        "the 4s leading silence still qualifies against the default 3s minimum"
     );
     assert!(
         !suggestion.end_detected,
-        "the 3s trailing silence is now too short"
+        "the 7s trailing silence is now too short against an 8s minimum"
     );
 }
 
@@ -239,7 +240,7 @@ fn trimming_uses_stream_copy_and_preserves_metadata() {
         let path = ws.make(name, &codec);
         let info = probe_ok(&path);
 
-        let outcome = ffmpeg::save(&info, &SaveRequest::trim(2.0, 8.0))
+        let outcome = ffmpeg::save(&info, &SaveRequest::trim(4.0, 10.0))
             .unwrap_or_else(|e| panic!("saving {name}: {e:#}"));
 
         assert!(!outcome.noop, "{name} should have changed");
@@ -252,9 +253,9 @@ fn trimming_uses_stream_copy_and_preserves_metadata() {
             "{name} became {}s",
             outcome.output_duration
         );
-        assert!((outcome.removed_beginning - 2.0).abs() < 0.001);
-        // Encoders pad slightly, so the source is not exactly 11.000 s.
-        let expected_ending = info.duration - 8.0;
+        assert!((outcome.removed_beginning - 4.0).abs() < 0.001);
+        // Encoders pad slightly, so the source is not exactly 17.000 s.
+        let expected_ending = info.duration - 10.0;
         assert!((outcome.removed_ending - expected_ending).abs() < 0.001);
         assert!(
             outcome.metadata.fully_preserved(),
@@ -686,11 +687,11 @@ fn the_binary_reads_a_config_file_and_lets_the_cli_override_it() {
     ws.make("a.flac", &["-c:a", "flac"]);
     ws.make("b.opus", &["-c:a", "libopus", "-b:a", "64k"]);
 
-    // Minimum durations longer than the fixture's silences: nothing qualifies.
+    // Minimum durations longer than the fixture's silences (4s / 7s): nothing qualifies.
     let config = ws.path().join("config.toml");
     std::fs::write(
         &config,
-        "[auto_trim]\nbegin_min_duration = 5\nend_min_duration = 5\n",
+        "[auto_trim]\nbegin_min_duration = 8\nend_min_duration = 8\n",
     )
     .unwrap();
 

@@ -10,7 +10,7 @@ use clap::Parser;
 use ratatui::crossterm::event::{self, Event};
 
 use audioedit::app::App;
-use audioedit::batch::RunMode;
+use audioedit::batch::{OutputFormat, RunMode};
 use audioedit::cli::Cli;
 use audioedit::config::Config;
 use audioedit::media::probe;
@@ -106,12 +106,10 @@ fn run_batch(
     } else {
         RunMode::Apply
     };
+    let format = cli.format;
 
     if files.is_empty() && skipped.is_empty() {
-        println!(
-            "No supported audio files were found in {}.",
-            folder.display()
-        );
+        report_no_files(folder, format);
         return Ok(());
     }
 
@@ -120,17 +118,31 @@ fn run_batch(
         return Ok(());
     }
 
-    println!();
-    let report = batch::run(files, skipped, config, mode, |progress| {
-        if let batch::Progress::Item(item) = progress {
-            println!("{}", item.line());
-            let _ = std::io::stdout().flush();
-        }
-    });
+    // JSON must stay a single parseable document, so it skips the spacing
+    // and per-file streaming the other formats use.
+    if !matches!(format, OutputFormat::Json | OutputFormat::JsonFull) {
+        println!();
+    }
+    let report = if format == OutputFormat::Csv {
+        println!("{}", batch::CSV_HEADER);
+        batch::run(files, skipped, config, mode, |progress| {
+            if let batch::Progress::Item(item) = progress {
+                println!("{}", item.csv_row());
+                let _ = std::io::stdout().flush();
+            }
+        })
+    } else {
+        batch::run(files, skipped, config, mode, |_| {})
+    };
 
-    println!();
-    for line in report.summary_lines() {
-        println!("{line}");
+    match format {
+        OutputFormat::Csv => {
+            println!();
+            for line in report.summary_lines() {
+                println!("{line}");
+            }
+        }
+        _ => println!("{}", report.render(format)),
     }
 
     // A failure in a folder-wide run is worth a non-zero exit status.
@@ -138,6 +150,23 @@ fn run_batch(
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// The empty-folder notice, in the requested `--format` (design §17).
+fn report_no_files(folder: &Path, format: OutputFormat) {
+    let message = format!("No supported audio files were found in {}.", folder.display());
+    match format {
+        OutputFormat::Json | OutputFormat::JsonFull => {
+            let value = serde_json::json!({ "processed": 0, "message": message });
+            let rendered = if format == OutputFormat::JsonFull {
+                serde_json::to_string_pretty(&value)
+            } else {
+                serde_json::to_string(&value)
+            };
+            println!("{}", rendered.unwrap_or(message));
+        }
+        _ => println!("{message}"),
+    }
 }
 
 /// Confirmation before a destructive folder-wide run (design §17).
