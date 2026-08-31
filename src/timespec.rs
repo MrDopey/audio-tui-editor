@@ -126,6 +126,32 @@ pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
     Ok(PosSpec::Absolute(parse_duration(s)?))
 }
 
+/// Parse a cursor-jump expression relative to a `current` position (design
+/// §11: the Cursor prompt, distinct from the Begin/End marker prompts).
+///
+/// `+X`/`-X`: `X` seconds after/before `current`. `++X`/`--X`: `X` seconds
+/// after the start / before the end of the file (the same meaning `+`/`-`
+/// have in [`parse_pos`]). Bare `X`, `mm:ss` and `P%` are absolute/percent,
+/// same as [`parse_pos`].
+pub fn parse_cursor_pos(input: &str, current: f64, duration: f64) -> Result<f64, String> {
+    let s = input.trim();
+    let clamp = |v: f64| v.clamp(0.0, duration.max(0.0));
+
+    if let Some(rest) = s.strip_prefix("++") {
+        return Ok(clamp(parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix("--") {
+        return Ok(clamp(duration - parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix('+') {
+        return Ok(clamp(current + parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix('-') {
+        return Ok(clamp(current - parse_duration(rest)?));
+    }
+    Ok(clamp(parse_pos(s)?.resolve(duration)))
+}
+
 /// Parse a duration: `10s`, `1m`, `2h`, `500ms`, `1:23`, `1:02:03`, `90`.
 pub fn parse_duration(input: &str) -> Result<f64, String> {
     let s = input.trim();
@@ -300,6 +326,24 @@ mod tests {
         assert!(!nudged.is_relative());
         assert_eq!(nudged.seconds(), 589.0);
         assert_eq!(nudged.to_string(), "09:49");
+    }
+
+    #[test]
+    fn cursor_pos_prefixes_pick_the_right_reference_point() {
+        // current = 100s, duration = 600s.
+        assert_eq!(parse_cursor_pos("+10s", 100.0, 600.0).unwrap(), 110.0);
+        assert_eq!(parse_cursor_pos("-10s", 100.0, 600.0).unwrap(), 90.0);
+        assert_eq!(parse_cursor_pos("++10s", 100.0, 600.0).unwrap(), 10.0);
+        assert_eq!(parse_cursor_pos("--10s", 100.0, 600.0).unwrap(), 590.0);
+        assert_eq!(parse_cursor_pos("1:23", 100.0, 600.0).unwrap(), 83.0);
+        assert_eq!(parse_cursor_pos("50%", 100.0, 600.0).unwrap(), 300.0);
+    }
+
+    #[test]
+    fn cursor_pos_clamps_to_the_file() {
+        assert_eq!(parse_cursor_pos("-1000s", 100.0, 600.0).unwrap(), 0.0);
+        assert_eq!(parse_cursor_pos("+1000s", 100.0, 600.0).unwrap(), 600.0);
+        assert_eq!(parse_cursor_pos("--1000s", 100.0, 600.0).unwrap(), 0.0);
     }
 
     #[test]

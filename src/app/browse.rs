@@ -193,6 +193,46 @@ mod tests {
     }
 
     #[test]
+    fn choosing_no_in_the_discard_dialog_discards_and_continues() {
+        let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // dirty
+
+        app.selected = 1;
+        app.open_selected();
+        assert!(matches!(
+            app.overlay,
+            Overlay::ConfirmDiscard(PendingNav::Open(1))
+        ));
+
+        press(&mut app, KeyCode::Char('n'));
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(app.session.as_ref().unwrap().index, 1);
+        assert_eq!(app.pending_nav_after_save, None);
+    }
+
+    #[test]
+    fn escaping_the_discard_dialog_cancels_and_keeps_the_file_open() {
+        let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('l')); // dirty
+
+        app.selected = 1;
+        app.open_selected();
+        press(&mut app, KeyCode::Esc);
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(
+            app.session.as_ref().unwrap().index,
+            0,
+            "stays on the dirty file"
+        );
+    }
+
+    #[test]
     fn a_successful_save_continues_to_the_remembered_navigation_target() {
         let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
         app.overlay = Overlay::None;

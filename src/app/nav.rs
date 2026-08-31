@@ -6,6 +6,7 @@
 //! once that's settled (or was never in question).
 
 use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, Session};
+use crate::player::AudioPlayer;
 use crate::timespec::Marker;
 
 impl App {
@@ -62,6 +63,7 @@ impl App {
         let len = self.files.len() as isize;
         let next = (current as isize + delta).rem_euclid(len) as usize;
         let resume_mode = self.mode;
+        let was_playing = self.session.as_ref().is_some_and(|s| s.player.is_playing());
         self.request_nav(PendingNav::Open(next));
 
         if self.session.as_ref().is_some_and(|s| s.index == next) {
@@ -75,6 +77,11 @@ impl App {
                 }
                 Mode::Metadata => self.mode = Mode::Metadata,
                 Mode::Browse | Mode::Play => {}
+            }
+            // Keep the music going across a song switch: a fresh session
+            // otherwise always opens paused (see `Session::new`).
+            if was_playing {
+                self.with_player(AudioPlayer::play);
             }
         }
     }
@@ -103,6 +110,24 @@ impl App {
             .map(|s| s.marker(kind).text().to_string())
             .unwrap_or_default();
         self.prompt = Some(Prompt::new(PromptKind::Marker(kind), current));
+    }
+
+    pub(super) fn prompt_for_cursor(&mut self) {
+        let current = self
+            .session
+            .as_ref()
+            .map(|s| s.marker(s.active).text().to_string())
+            .unwrap_or_default();
+        self.prompt = Some(Prompt::with_placeholder(PromptKind::Cursor, current));
+    }
+
+    /// Seek playback to the active marker's position without starting
+    /// playback (unlike `p`, which seeks and plays).
+    pub(super) fn seek_to_active_marker(&mut self) {
+        let target = self.session.as_ref().map(|s| s.marker(s.active).seconds());
+        if let Some(target) = target {
+            self.with_player(|p| p.seek_to(target));
+        }
     }
 
     pub(super) fn recalculate_auto_markers(&mut self) {

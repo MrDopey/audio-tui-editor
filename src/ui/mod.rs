@@ -104,14 +104,26 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     let line = if let Some(prompt) = &app.prompt {
-        Line::from(vec![
-            Span::styled(
-                format!("{}{}", prompt.sigil(), prompt.label()),
-                Style::default().fg(ACCENT),
-            ),
-            Span::raw(prompt.buffer.clone()),
-            Span::styled("█", Style::default().fg(ACCENT)),
-        ])
+        let mut spans = vec![Span::styled(
+            format!("{}{}", prompt.sigil(), prompt.label()),
+            Style::default().fg(ACCENT),
+        )];
+        match (&prompt.placeholder, prompt.buffer.is_empty()) {
+            // Untouched placeholder: cursor sits before the shadow text,
+            // ready for the user's own input to replace it outright.
+            (Some(placeholder), true) => {
+                spans.push(Span::styled("█", Style::default().fg(ACCENT)));
+                spans.push(Span::styled(
+                    placeholder.clone(),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            _ => {
+                spans.push(Span::raw(prompt.buffer.clone()));
+                spans.push(Span::styled("█", Style::default().fg(ACCENT)));
+            }
+        }
+        Line::from(spans)
     } else if let Some(status) = &app.status {
         let colour = if status.is_error {
             Color::Red

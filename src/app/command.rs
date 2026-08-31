@@ -2,7 +2,7 @@
 
 use super::{App, MarkerKind, Overlay, PendingNav, Prompt, PromptKind};
 use crate::batch::RunMode;
-use crate::timespec::Marker;
+use crate::timespec::{parse_cursor_pos, Marker};
 
 impl App {
     pub(super) fn submit_prompt(&mut self, prompt: Prompt) {
@@ -17,6 +17,7 @@ impl App {
                 self.repeat_search(true);
             }
             PromptKind::Marker(kind) => self.set_marker_from_expression(kind, &input),
+            PromptKind::Cursor => self.set_cursor_from_expression(&input),
             PromptKind::MetadataField(index) => {
                 if let Some(session) = &mut self.session {
                     if let Some(field) = session.fields.get_mut(index) {
@@ -48,6 +49,34 @@ impl App {
                 self.info(format!("{} marker set to {shown}", kind.label()));
             }
             Err(err) => self.warn(format!("{err}. Try 10:00, +10s, -1m or 50%.")),
+        }
+    }
+
+    /// Jump the active marker (the "cursor") to a typed position. Unlike
+    /// `set_marker_from_expression`, `+`/`-` here are relative to the
+    /// cursor's *current* position rather than the start/end of the file;
+    /// `++`/`--` reach the start/end the way `+`/`-` do for Begin/End.
+    fn set_cursor_from_expression(&mut self, input: &str) {
+        let Some((active, current, duration)) = self
+            .session
+            .as_ref()
+            .map(|s| (s.active, s.marker(s.active).seconds(), s.duration()))
+        else {
+            self.warn("No file is open.");
+            return;
+        };
+        match parse_cursor_pos(input, current, duration) {
+            Ok(seconds) => {
+                let marker = Marker::absolute(seconds, duration);
+                let shown = if let Some(session) = &mut self.session {
+                    session.set_marker(active, marker);
+                    session.marker(active).to_string()
+                } else {
+                    return;
+                };
+                self.info(format!("Cursor moved to {shown}"));
+            }
+            Err(err) => self.warn(format!("{err}. Try 10:00, +10s, ++10s, --10s or 50%.")),
         }
     }
 
@@ -115,7 +144,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{app, press};
+    use super::super::tests::{app, press, press_ctrl, type_text};
     use crate::app::Overlay;
     use ratatui::crossterm::event::KeyCode;
 
@@ -133,6 +162,62 @@ mod tests {
         assert_eq!(session.end.seconds(), 590.0);
         assert_eq!(session.begin.text(), "+10s");
         assert_eq!(session.end.to_string(), "-10s (09:50)");
+    }
+
+    #[test]
+    fn cursor_prompt_single_prefixes_are_relative_to_the_markers_current_position() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
+
+        press(&mut app, KeyCode::Char('C'));
+        type_text(&mut app, "+5s");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 15.0);
+
+        press(&mut app, KeyCode::Char('C'));
+        type_text(&mut app, "-20s");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            app.session.as_ref().unwrap().begin.seconds(),
+            0.0,
+            "clamped to the file"
+        );
+    }
+
+    #[test]
+    fn cursor_prompt_double_prefixes_are_absolute_from_start_and_end() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
+
+        press(&mut app, KeyCode::Char('C'));
+        type_text(&mut app, "++5s");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 5.0);
+
+        press(&mut app, KeyCode::Tab); // switch active marker to End
+        press(&mut app, KeyCode::Char('C'));
+        type_text(&mut app, "--5s");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session.as_ref().unwrap().end.seconds(), 595.0);
+    }
+
+    #[test]
+    fn an_untouched_cursor_prompt_submits_the_placeholder_value() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
+
+        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Enter); // submit without typing anything
+        assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 10.0);
     }
 
     #[test]

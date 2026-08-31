@@ -115,17 +115,17 @@ impl App {
                 _ => {}
             },
             Kind::ConfirmDiscard(nav) => match key.code {
-                KeyCode::Enter => {
-                    self.overlay = Overlay::None;
-                    self.perform_nav(nav);
-                }
-                KeyCode::Char('w') => {
+                KeyCode::Char('y') | KeyCode::Enter | KeyCode::Char('w') => {
                     self.overlay = Overlay::None;
                     // Saving first, then continuing to the intended target —
                     // except Quit, which would otherwise end the program
                     // before the save summary ever gets drawn.
                     self.pending_nav_after_save = (nav != PendingNav::Quit).then_some(nav);
                     self.save_current();
+                }
+                KeyCode::Char('n') => {
+                    self.overlay = Overlay::None;
+                    self.perform_nav(nav);
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
                     self.overlay = Overlay::None;

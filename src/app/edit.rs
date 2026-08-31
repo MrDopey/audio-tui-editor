@@ -36,6 +36,8 @@ impl App {
             KeyCode::Char('B') => self.prompt_for_marker(MarkerKind::Begin),
             KeyCode::Char('E') => self.prompt_for_marker(MarkerKind::End),
             KeyCode::Char('i') => self.prompt_for_marker(active),
+            KeyCode::Char('C') => self.prompt_for_cursor(),
+            KeyCode::Char('g') => self.seek_to_active_marker(),
             KeyCode::Char(' ') => self.with_player(AudioPlayer::toggle),
             KeyCode::Char('p') => {
                 let target = self.session.as_ref().map(|s| s.marker(active).seconds());
@@ -98,6 +100,64 @@ mod tests {
         press_ctrl(&mut app, KeyCode::Up);
         assert_eq!(app.mode, Mode::Edit);
         assert_eq!(app.session.as_ref().unwrap().index, 0);
+    }
+
+    #[test]
+    fn cycling_songs_keeps_playing_if_the_outgoing_song_was_playing() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e')); // EDIT
+        app.with_player(crate::player::AudioPlayer::play);
+        assert!(app.session.as_ref().unwrap().player.is_playing());
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.session.as_ref().unwrap().index, 1);
+        assert!(
+            app.session.as_ref().unwrap().player.is_playing(),
+            "switching songs should not silently pause playback"
+        );
+    }
+
+    #[test]
+    fn cycling_songs_stays_paused_if_the_outgoing_song_was_paused() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e')); // EDIT
+        assert!(!app.session.as_ref().unwrap().player.is_playing());
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.session.as_ref().unwrap().index, 1);
+        assert!(!app.session.as_ref().unwrap().player.is_playing());
+    }
+
+    #[test]
+    fn g_seeks_to_the_active_marker_without_playing() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press_ctrl(&mut app, KeyCode::Char('l')); // move begin marker to 10s
+        press(&mut app, KeyCode::Char('g'));
+        let session = app.session.as_ref().unwrap();
+        assert!(!session.player.is_playing(), "g must not start playback");
+        assert!((session.player.position() - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn shift_c_opens_a_cursor_prompt_shadowed_by_the_active_markers_position() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Char('C'));
+        let prompt = app.prompt.as_ref().unwrap();
+        assert!(
+            prompt.buffer.is_empty(),
+            "buffer starts empty, not prefilled"
+        );
+        assert_eq!(prompt.placeholder.as_deref(), Some("00:00"));
     }
 
     #[test]
