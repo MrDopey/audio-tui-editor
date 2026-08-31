@@ -4,7 +4,7 @@ use std::sync::mpsc::channel;
 
 use anyhow::Context;
 
-use super::{App, Overlay, Session};
+use super::{try_recv_result, App, Overlay, Session};
 use crate::media::ffmpeg::{self, SaveOutcome, SaveRequest};
 use crate::media::probe::{self, MediaInfo};
 
@@ -67,12 +67,8 @@ impl App {
         let Some(rx) = &self.save_rx else {
             return false;
         };
-        let received = match rx.try_recv() {
-            Ok(result) => result,
-            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                Err(anyhow::anyhow!("the save worker stopped unexpectedly"))
-            }
+        let Some(received) = try_recv_result(rx, "the save worker") else {
+            return false;
         };
         self.save_rx = None;
 
@@ -122,12 +118,8 @@ impl App {
         let Some(rx) = &self.refresh_rx else {
             return false;
         };
-        let received = match rx.try_recv() {
-            Ok(result) => result,
-            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(anyhow::anyhow!(
-                "the file refresh worker stopped unexpectedly"
-            )),
+        let Some(received) = try_recv_result(rx, "the file refresh worker") else {
+            return false;
         };
         self.refresh_rx = None;
         match received {
@@ -219,7 +211,10 @@ mod tests {
         press(&mut app, KeyCode::Enter);
 
         app.save_current();
-        assert!(app.save_rx.is_some(), "the worker thread must have been spawned");
+        assert!(
+            app.save_rx.is_some(),
+            "the worker thread must have been spawned"
+        );
 
         // The worker thread runs concurrently; give it a moment to answer.
         let outcome = (0..200).find_map(|_| {
@@ -233,7 +228,9 @@ mod tests {
         assert!(outcome.is_some(), "poll_save never observed a result");
 
         match &app.overlay {
-            Overlay::Error { message, detail, .. } => {
+            Overlay::Error {
+                message, detail, ..
+            } => {
                 assert!(message.contains("NOT been modified"));
                 assert!(detail.contains("boom"));
             }

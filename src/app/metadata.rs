@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, Mode, Overlay, Prompt, PromptKind};
+use super::{App, Mode, Prompt, PromptKind};
 use crate::media::probe::METADATA_FIELDS;
 
 impl App {
@@ -54,10 +54,6 @@ impl App {
                 }
                 self.info("Field reverted.");
             }
-            KeyCode::Char(':') => {
-                self.prompt = Some(Prompt::new(PromptKind::Command, String::new()))
-            }
-            KeyCode::Char('?') => self.overlay = Overlay::Help,
             _ => {}
         }
     }
@@ -84,7 +80,11 @@ mod tests {
         );
 
         press_ctrl(&mut app, KeyCode::Char('j'));
-        assert_eq!(app.mode, Mode::Metadata, "should stay in METADATA after cycling");
+        assert_eq!(
+            app.mode,
+            Mode::Metadata,
+            "should stay in METADATA after cycling"
+        );
         assert_eq!(app.session.as_ref().unwrap().index, 1);
 
         press_ctrl(&mut app, KeyCode::Up);

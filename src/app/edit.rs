@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, MarkerKind, Overlay, Prompt, PromptKind};
+use super::{App, MarkerKind};
 use crate::player::AudioPlayer;
 
 impl App {
@@ -48,10 +48,6 @@ impl App {
             }
             KeyCode::Char('a') => self.recalculate_auto_markers(),
             KeyCode::Char('r') => self.reset_markers(),
-            KeyCode::Char(':') => {
-                self.prompt = Some(Prompt::new(PromptKind::Command, String::new()))
-            }
-            KeyCode::Char('?') => self.overlay = Overlay::Help,
             _ => {}
         }
     }
@@ -79,7 +75,11 @@ mod tests {
         assert_eq!(app.mode, Mode::Play, "q in METADATA should behave like Esc");
 
         press(&mut app, KeyCode::Char('q'));
-        assert_eq!(app.mode, Mode::Browse, "q in PLAY should close the file like Esc");
+        assert_eq!(
+            app.mode,
+            Mode::Browse,
+            "q in PLAY should close the file like Esc"
+        );
         assert!(app.session.is_none());
     }
 

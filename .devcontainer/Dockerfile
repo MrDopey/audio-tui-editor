@@ -36,7 +36,7 @@ RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
 # Set `DEVCONTAINER` environment variable to help with orientation
 ENV DEVCONTAINER=true
 
-RUN rustup component add rustfmt
+RUN rustup component add rustfmt clippy
 
 RUN apt-get update && apt-get install -y \
   ffmpeg \

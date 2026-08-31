@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, Overlay, PendingNav, Prompt, PromptKind};
+use super::{App, PendingNav};
 use crate::player::AudioPlayer;
 
 impl App {
@@ -41,10 +41,6 @@ impl App {
             KeyCode::Char('G') => self.with_player(|p| p.seek_to(p.duration())),
             KeyCode::Char('e') => self.enter_edit_mode(),
             KeyCode::Char('m') => self.mode = crate::app::Mode::Metadata,
-            KeyCode::Char(':') => {
-                self.prompt = Some(Prompt::new(PromptKind::Command, String::new()))
-            }
-            KeyCode::Char('?') => self.overlay = Overlay::Help,
             _ => {}
         }
     }
@@ -119,7 +115,10 @@ mod tests {
 
         press_ctrl(&mut app, KeyCode::Char('j'));
         assert_eq!(app.session.as_ref().unwrap().index, 1);
-        assert_eq!(app.session.as_ref().unwrap().player.volume(), starting_volume);
+        assert_eq!(
+            app.session.as_ref().unwrap().player.volume(),
+            starting_volume
+        );
 
         press_ctrl(&mut app, KeyCode::Down);
         assert_eq!(app.session.as_ref().unwrap().index, 2);
@@ -128,7 +127,11 @@ mod tests {
         assert_eq!(app.session.as_ref().unwrap().index, 0, "wraps around");
 
         press_ctrl(&mut app, KeyCode::Char('k'));
-        assert_eq!(app.session.as_ref().unwrap().index, 2, "wraps the other way");
+        assert_eq!(
+            app.session.as_ref().unwrap().index,
+            2,
+            "wraps the other way"
+        );
 
         press(&mut app, KeyCode::Char('k'));
         assert_eq!(

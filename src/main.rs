@@ -154,7 +154,10 @@ fn run_batch(
 
 /// The empty-folder notice, in the requested `--format` (design §17).
 fn report_no_files(folder: &Path, format: OutputFormat) {
-    let message = format!("No supported audio files were found in {}.", folder.display());
+    let message = format!(
+        "No supported audio files were found in {}.",
+        folder.display()
+    );
     match format {
         OutputFormat::Json | OutputFormat::JsonFull => {
             let value = serde_json::json!({ "processed": 0, "message": message });

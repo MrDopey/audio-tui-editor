@@ -116,22 +116,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{app, press};
-    use crate::app::{Overlay, Prompt, PromptKind};
+    use crate::app::Overlay;
     use ratatui::crossterm::event::KeyCode;
-
-    #[test]
-    fn prompt_editing_supports_backspace_and_cursor_movement() {
-        let mut prompt = Prompt::new(PromptKind::Command, String::new());
-        for c in "wq".chars() {
-            prompt.insert(c);
-        }
-        assert_eq!(prompt.buffer, "wq");
-        prompt.backspace();
-        assert_eq!(prompt.buffer, "w");
-        prompt.cursor = 0;
-        prompt.insert('x');
-        assert_eq!(prompt.buffer, "xw");
-    }
 
     #[test]
     fn relative_expressions_set_markers_and_keep_their_text() {
@@ -224,8 +210,14 @@ mod tests {
         assert!(!app.session.as_ref().unwrap().is_dirty());
 
         app.run_command("wq");
-        assert!(app.session.is_none(), "should close immediately, like vim's :x");
-        assert!(app.save_rx.is_none(), "must not spawn the save pipeline for a no-op exit");
+        assert!(
+            app.session.is_none(),
+            "should close immediately, like vim's :x"
+        );
+        assert!(
+            app.save_rx.is_none(),
+            "must not spawn the save pipeline for a no-op exit"
+        );
     }
 
     #[test]
@@ -238,7 +230,10 @@ mod tests {
         press(&mut app, KeyCode::Esc);
 
         app.run_command("wq");
-        assert!(app.session.is_some(), "the file stays open while the save runs");
+        assert!(
+            app.session.is_some(),
+            "the file stays open while the save runs"
+        );
         assert!(app.save_rx.is_some());
         assert_eq!(
             app.pending_nav_after_save,

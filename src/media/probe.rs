@@ -10,6 +10,10 @@ use serde::Deserialize;
 
 use super::{ffprobe_bin, missing_backend_hint, tail_of};
 
+// Re-exported so existing callers (`crate::media::probe::scan_folder`, etc.)
+// keep working now that scanning lives in its own module.
+pub use super::scan::{scan_folder, scan_folder_detailed, ScanResult, SkippedFile};
+
 /// Metadata fields the application surfaces and tries to preserve (design §15).
 /// Keys are ffmpeg tag names, lowercased.
 pub const METADATA_FIELDS: &[(&str, &str)] = &[
@@ -214,93 +218,24 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
     }))
 }
 
-/// A candidate file that could not be offered for editing, and why.
-#[derive(Debug, Clone)]
-pub struct SkippedFile {
-    pub name: String,
-    pub reason: String,
-}
-
-/// The outcome of scanning a folder: files ready to edit, plus anything that
-/// looked like it might be audio but could not be probed successfully.
-#[derive(Debug, Clone, Default)]
-pub struct ScanResult {
-    pub files: Vec<MediaInfo>,
-    pub skipped: Vec<SkippedFile>,
-}
-
-/// Scan a folder for files that probe as audio, sorted by name.
-///
-/// Extensions are used only to skip obvious non-media files cheaply; anything
-/// plausible is confirmed by probing.
-pub fn scan_folder(folder: &Path) -> Result<Vec<MediaInfo>> {
-    Ok(scan_folder_detailed(folder)?.files)
-}
-
-/// As [`scan_folder`], but also reports candidates that could not be read, so
-/// a folder-wide run can account for every file rather than silently dropping
-/// the ones it could not probe (design §17).
-pub fn scan_folder_detailed(folder: &Path) -> Result<ScanResult> {
-    let entries = std::fs::read_dir(folder)
-        .with_context(|| format!("reading folder {}", folder.display()))?;
-
-    let mut paths: Vec<PathBuf> = Vec::new();
-    for entry in entries {
-        let entry = entry.with_context(|| format!("reading folder {}", folder.display()))?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with('.'))
-        {
-            continue;
-        }
-        paths.push(path);
-    }
-    paths.sort();
-
-    let mut result = ScanResult::default();
-    for path in paths {
-        if !worth_probing(&path) {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        match probe(&path) {
-            Ok(Some(info)) if info.duration > 0.0 => result.files.push(info),
-            Ok(Some(_)) => result.skipped.push(SkippedFile {
-                name,
-                reason: "no measurable duration".to_string(),
-            }),
-            Ok(None) => result.skipped.push(SkippedFile {
-                name,
-                reason: "no audio stream".to_string(),
-            }),
-            Err(err) => result.skipped.push(SkippedFile {
-                name,
-                reason: format!("{err:#}"),
-            }),
-        }
-    }
-    Ok(result)
-}
-
-/// Cheap pre-filter. Extensionless files are still probed, so unusual names
-/// are not excluded; only known non-audio extensions are skipped outright.
-fn worth_probing(path: &Path) -> bool {
-    const SKIP: &[&str] = &[
-        "txt", "md", "json", "toml", "yaml", "yml", "png", "jpg", "jpeg", "gif", "webp", "pdf",
-        "zip", "gz", "tar", "xz", "rs", "py", "sh", "html", "css", "js", "log", "csv", "svg",
-        "exe", "dll", "so", "o", "a", "bin", "lock",
-    ];
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => !SKIP.contains(&ext.to_ascii_lowercase().as_str()),
-        None => true,
+/// A test fixture with the fields a probed [`MediaInfo`] usually shares
+/// (format/codec/rate/channels), so a test that only cares about a couple of
+/// fields can build one with struct-update syntax instead of repeating all
+/// of them.
+#[cfg(test)]
+pub(crate) fn fixture() -> MediaInfo {
+    MediaInfo {
+        path: PathBuf::from("/tmp/a.opus"),
+        duration: 0.0,
+        format_name: "ogg".into(),
+        audio_codec: "opus".into(),
+        bit_rate: Some(64_000),
+        sample_rate: Some(48_000),
+        channels: Some(2),
+        has_cover_art: false,
+        chapter_count: 0,
+        tags: BTreeMap::new(),
+        stream_tags: BTreeMap::new(),
     }
 }
 
@@ -309,30 +244,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skips_obvious_non_media() {
-        assert!(!worth_probing(Path::new("notes.md")));
-        assert!(!worth_probing(Path::new("cover.JPG")));
-        assert!(worth_probing(Path::new("interview.opus")));
-        assert!(worth_probing(Path::new("recording.m4a")));
-        assert!(worth_probing(Path::new("no-extension")));
-    }
-
-    #[test]
     fn tags_are_looked_up_case_insensitively() {
         let mut tags = BTreeMap::new();
         tags.insert("title".to_string(), "Hello".to_string());
         let info = MediaInfo {
-            path: PathBuf::from("/tmp/a.opus"),
             duration: 1.0,
-            format_name: "ogg".into(),
-            audio_codec: "opus".into(),
-            bit_rate: None,
-            sample_rate: None,
-            channels: None,
-            has_cover_art: false,
-            chapter_count: 0,
             tags,
-            stream_tags: BTreeMap::new(),
+            ..fixture()
         };
         assert_eq!(info.tag("TITLE"), Some("Hello"));
         assert_eq!(info.tag("artist"), None);

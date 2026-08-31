@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::{channel, Receiver};
 
-use super::App;
+use super::{try_recv_result, App};
 use crate::batch::{self, BatchItem, BatchReport, Progress, RunMode};
 use crate::player::AudioPlayer;
 
@@ -32,9 +32,11 @@ impl App {
         // A real run rewrites files on disk, including the one open for
         // editing; refuse rather than silently discarding unsaved markers or
         // metadata (design: "unsaved changes must not be silently discarded").
-        if !mode.is_dry_run() && self.session.as_ref().is_some_and(super::Session::is_dirty) {
+        if !mode.is_dry_run() && self.session_is_dirty() {
             self.overlay = super::Overlay::None;
-            self.warn("Save or discard changes to the open file before applying to the whole folder.");
+            self.warn(
+                "Save or discard changes to the open file before applying to the whole folder.",
+            );
             return;
         }
         // Playback holds a decoder open on one of these files.
@@ -135,12 +137,8 @@ impl App {
         let Some(rx) = &self.rescan_rx else {
             return false;
         };
-        let received = match rx.try_recv() {
-            Ok(result) => result,
-            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(anyhow::anyhow!(
-                "the folder scan worker stopped unexpectedly"
-            )),
+        let Some(received) = try_recv_result(rx, "the folder scan worker") else {
+            return false;
         };
         self.rescan_rx = None;
         match received {

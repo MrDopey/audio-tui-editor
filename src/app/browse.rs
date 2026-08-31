@@ -27,10 +27,6 @@ impl App {
             KeyCode::Char('n') => self.repeat_search(true),
             KeyCode::Char('N') => self.repeat_search(false),
             KeyCode::Enter => self.open_selected(),
-            KeyCode::Char(':') => {
-                self.prompt = Some(Prompt::new(PromptKind::Command, String::new()))
-            }
-            KeyCode::Char('?') => self.overlay = super::Overlay::Help,
             KeyCode::Char('r') => self.rescan_folder(),
             KeyCode::Char('q') => self.request_nav(PendingNav::Quit),
             _ => {}
@@ -83,7 +79,7 @@ impl App {
             return;
         }
         let index = self.selected;
-        if self.session.as_ref().is_some_and(super::Session::is_dirty) {
+        if self.session_is_dirty() {
             self.overlay = super::Overlay::ConfirmDiscard(PendingNav::Open(index));
             return;
         }

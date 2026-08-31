@@ -10,5 +10,6 @@ pub mod cli;
 pub mod config;
 pub mod media;
 pub mod player;
+mod text;
 pub mod timespec;
 pub mod ui;

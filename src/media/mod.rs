@@ -3,6 +3,7 @@
 pub mod autotrim;
 pub mod ffmpeg;
 pub mod probe;
+pub mod scan;
 pub mod waveform;
 
 use std::process::Command;

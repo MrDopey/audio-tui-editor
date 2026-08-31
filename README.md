@@ -311,15 +311,16 @@ is actually in the output.
 
 ```bash
 cargo test                      # unit tests plus integration tests against real audio
-cargo test --test pipeline      # end-to-end pipeline tests only
+cargo test --test saving        # end-to-end save/trim/metadata tests only
 cargo clippy --all-targets
 cargo fmt
 ```
 
-`tests/pipeline.rs` builds fixtures with a real `ffmpeg` (so it must be on
-`PATH`) and asserts the guarantees that matter: originals survive failed saves,
-no-ops do not rewrite files, dry runs write nothing, and metadata claims match
-what is on disk.
+The integration tests in `tests/` (`probing.rs`, `autotrim.rs`, `saving.rs`,
+`waveform.rs`, `batch.rs`, `cli.rs`, sharing fixtures from `tests/common/`)
+build fixtures with a real `ffmpeg` (so it must be on `PATH`) and assert the
+guarantees that matter: originals survive failed saves, no-ops do not rewrite
+files, dry runs write nothing, and metadata claims match what is on disk.
 
 ---
 
@@ -332,18 +333,55 @@ audio-tui-editor/
 │   ├── lib.rs            # crate root, re-exports the modules below
 │   ├── cli.rs            # clap definitions and config overrides
 │   ├── config.rs         # config file schema, defaults and validation
-│   ├── app.rs            # application state, modes and key handling
-│   ├── ui.rs             # ratatui rendering
-│   ├── player.rs         # transport, seeking and volume (rodio)
-│   ├── batch.rs          # folder-wide trim, including dry runs
+│   ├── text.rs           # shared string helpers (e.g. ellipsis truncation)
 │   ├── timespec.rs       # parsing of +10s / -1m / 50% / 10:00 positions
+│   ├── app/              # application state, modes and key handling
+│   │   ├── mod.rs        # App struct, mode dispatch, shared test fixtures
+│   │   ├── browse.rs     # browse-mode key handling
+│   │   ├── play.rs       # play-mode key handling
+│   │   ├── edit.rs       # edit-mode key handling
+│   │   ├── metadata.rs   # metadata-mode key handling
+│   │   ├── overlay.rs    # overlay/help state and key handling
+│   │   ├── prompt.rs     # `:` command prompt state and key handling
+│   │   ├── nav.rs        # navigation between songs and markers
+│   │   ├── command.rs    # `:` command parsing
+│   │   ├── session.rs    # the currently open file
+│   │   ├── save.rs       # background save/refresh pipeline
+│   │   └── batch_view.rs # background batch pipeline for the TUI
+│   ├── ui/               # ratatui rendering, one module per mode
+│   │   ├── mod.rs        # render dispatcher, header/footer
+│   │   ├── browse.rs     # browse-mode rendering
+│   │   ├── play.rs       # play-mode rendering
+│   │   ├── edit.rs       # edit-mode rendering
+│   │   ├── metadata.rs   # metadata-mode rendering
+│   │   ├── waveform.rs   # waveform rendering, shared by play/edit
+│   │   └── overlay.rs    # popups, help and warning text
+│   ├── player/           # transport, seeking and volume (rodio)
+│   │   ├── mod.rs        # AudioOutput / AudioPlayer
+│   │   └── decoder.rs    # ffmpeg-backed PCM decoder
+│   ├── batch/            # folder-wide trim, including dry runs
+│   │   ├── mod.rs        # run modes and the batch pipeline
+│   │   └── report.rs     # per-item and summary reporting
 │   └── media/            # everything that shells out to ffmpeg/ffprobe
 │       ├── mod.rs        # binary resolution (AUDIOEDIT_FFMPEG/FFPROBE)
 │       ├── probe.rs      # support detection and metadata reads
+│       ├── scan.rs       # folder scanning for probeable media
 │       ├── autotrim.rs   # silence detection via ffmpeg silencedetect
-│       ├── waveform.rs   # peak/RMS analysis and the on-disk cache
-│       └── ffmpeg.rs     # the trim and save pipeline
-├── tests/pipeline.rs     # end-to-end tests against real audio
+│       ├── waveform/     # peak/RMS analysis and the on-disk cache
+│       │   ├── mod.rs
+│       │   └── cache.rs
+│       └── ffmpeg/       # the trim and save pipeline
+│           ├── mod.rs      # save orchestration and atomicity
+│           ├── command.rs  # ffmpeg command building and encoder selection
+│           └── metadata.rs # metadata comparison and reporting
+├── tests/                # end-to-end tests against real audio
+│   ├── common/mod.rs     # shared fixtures (Workspace, probe_ok, ...)
+│   ├── probing.rs
+│   ├── autotrim.rs
+│   ├── saving.rs
+│   ├── waveform.rs
+│   ├── batch.rs
+│   └── cli.rs
 ├── config.example.toml   # annotated copy of every default
 ├── design.md             # the design the source comments cite (design §N)
 └── .devcontainer/        # pinned Rust toolchain, ffmpeg, ALSA headers, Pulse bridge
