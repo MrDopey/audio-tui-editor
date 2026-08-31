@@ -48,6 +48,7 @@ impl App {
             self.skipped.clone(),
             self.config.clone(),
             mode,
+            1,
             tx,
         );
         self.overlay = super::Overlay::Batch(BatchView {

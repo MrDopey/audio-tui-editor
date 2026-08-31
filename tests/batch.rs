@@ -21,7 +21,7 @@ fn a_dry_run_reports_changes_without_touching_any_file() {
         .map(|f| std::fs::read(&f.path).unwrap())
         .collect();
 
-    let report = batch::run(&files, &[], &Config::default(), RunMode::DryRun, |_| {});
+    let report = batch::run(&files, &[], &Config::default(), RunMode::DryRun, 1, |_| {});
 
     assert_eq!(report.processed(), 3);
     assert_eq!(report.changed(), 2, "two files have silence to trim");
@@ -56,11 +56,15 @@ fn an_applied_run_trims_each_file_independently_and_reports_noops() {
 
     let files = probe::scan_folder(ws.path()).expect("scanning");
     let mut seen = Vec::new();
+    // jobs = 4 exercises the actual parallel path (more workers than files),
+    // so this is really testing that out-of-order completion still reports
+    // back in input order, not just that a sequential loop stays sequential.
     let report = batch::run(
         &files,
         &[],
         &Config::default(),
         RunMode::Apply,
+        4,
         |progress| {
             if let batch::Progress::Item(item) = progress {
                 seen.push(item.number);
@@ -68,7 +72,11 @@ fn an_applied_run_trims_each_file_independently_and_reports_noops() {
         },
     );
 
-    assert_eq!(seen, vec![1, 2, 3], "every file is processed in order");
+    assert_eq!(
+        seen,
+        vec![1, 2, 3],
+        "results are reported in input order even when processed in parallel"
+    );
     assert_eq!(report.changed(), 2);
     assert_eq!(report.noop(), 1);
     assert_eq!(report.failed(), 0);
@@ -102,7 +110,7 @@ fn a_broken_file_fails_alone_without_stopping_the_run() {
     broken.duration = 60.0;
     files.push(broken);
 
-    let report = batch::run(&files, &[], &Config::default(), RunMode::Apply, |_| {});
+    let report = batch::run(&files, &[], &Config::default(), RunMode::Apply, 1, |_| {});
 
     assert_eq!(report.processed(), 2);
     assert_eq!(report.failed(), 1, "the missing file must fail");

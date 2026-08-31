@@ -41,6 +41,10 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = OutputFormat::Table, value_name = "FORMAT")]
     pub format: OutputFormat,
 
+    /// Number of files to process at once during a folder-wide run.
+    #[arg(long, short = 'j', default_value_t = 1, value_name = "N")]
+    pub jobs: usize,
+
     /// Do not open an audio device (browsing and editing still work).
     #[arg(long)]
     pub no_audio: bool,

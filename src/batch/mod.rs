@@ -11,6 +11,8 @@ mod report;
 
 use std::sync::mpsc::Sender;
 
+use rayon::prelude::*;
+
 use crate::config::{AutoTrim, Config};
 use crate::media::probe::{MediaInfo, SkippedFile};
 use crate::media::{autotrim, ffmpeg};
@@ -92,8 +94,12 @@ pub fn run(
     skipped: &[SkippedFile],
     config: &Config,
     mode: RunMode,
+    jobs: usize,
     mut emit: impl FnMut(Progress),
 ) -> BatchReport {
+    // rayon treats 0 as "use its own default"; this run is only ever meant
+    // to use as many threads as the caller asked for, one at minimum.
+    let jobs = jobs.max(1);
     emit(Progress::Started {
         total: files.len() + skipped.len(),
         mode,
@@ -112,9 +118,34 @@ pub fn run(
         emit(Progress::Item(item));
     }
 
-    for info in files {
-        number += 1;
-        let item = process_one(number, info, config, mode);
+    // Detection/save per file can run across up to `jobs` threads, but
+    // `collect()` on an indexed parallel iterator preserves input order, so
+    // results still land — and get emitted to `emit` one at a time, in
+    // order — exactly as if the run were sequential (design §17: front ends
+    // see one file finish at a time). `jobs == 1` skips the pool entirely,
+    // so the default run is the plain sequential loop it always was.
+    let base_number = number;
+    let items: Vec<BatchItem> = if jobs == 1 {
+        files
+            .iter()
+            .enumerate()
+            .map(|(i, info)| process_one(base_number + i + 1, info, config, mode))
+            .collect()
+    } else {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build()
+            .expect("building the batch thread pool");
+        pool.install(|| {
+            files
+                .par_iter()
+                .enumerate()
+                .map(|(i, info)| process_one(base_number + i + 1, info, config, mode))
+                .collect()
+        })
+    };
+
+    for item in items {
         report.items.push(item.clone());
         emit(Progress::Item(item));
     }
@@ -205,10 +236,11 @@ pub fn spawn(
     skipped: Vec<SkippedFile>,
     config: Config,
     mode: RunMode,
+    jobs: usize,
     tx: Sender<Progress>,
 ) {
     std::thread::spawn(move || {
-        run(&files, &skipped, &config, mode, |progress| {
+        run(&files, &skipped, &config, mode, jobs, |progress| {
             // A closed channel means the UI moved on; stop reporting.
             let _ = tx.send(progress);
         });
@@ -250,7 +282,7 @@ mod tests {
             name: "corrupt.mp3".to_string(),
             reason: "no audio stream".to_string(),
         }];
-        let report = run(&[], &skipped, &Config::default(), RunMode::Apply, |_| {});
+        let report = run(&[], &skipped, &Config::default(), RunMode::Apply, 1, |_| {});
         assert_eq!(
             report.processed(),
             1,

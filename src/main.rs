@@ -131,14 +131,14 @@ fn run_batch(
     }
     let report = if format == OutputFormat::Csv {
         println!("{}", batch::CSV_HEADER);
-        batch::run(files, skipped, config, mode, |progress| {
+        batch::run(files, skipped, config, mode, cli.jobs, |progress| {
             if let batch::Progress::Item(item) = progress {
                 println!("{}", item.csv_row());
                 let _ = std::io::stdout().flush();
             }
         })
     } else {
-        batch::run(files, skipped, config, mode, |_| {})
+        batch::run(files, skipped, config, mode, cli.jobs, |_| {})
     };
 
     match format {
