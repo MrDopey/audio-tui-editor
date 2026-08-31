@@ -24,6 +24,8 @@ impl App {
             KeyCode::Right | KeyCode::Char('l') => {
                 self.nudge_marker(active, if ctrl { large } else { fine })
             }
+            KeyCode::Up | KeyCode::Char('k') if ctrl => self.cycle_song(-1),
+            KeyCode::Down | KeyCode::Char('j') if ctrl => self.cycle_song(1),
             KeyCode::Tab | KeyCode::BackTab => {
                 if let Some(session) = &mut self.session {
                     session.active = session.active.toggled();
@@ -79,6 +81,23 @@ mod tests {
         press(&mut app, KeyCode::Char('q'));
         assert_eq!(app.mode, Mode::Browse, "q in PLAY should close the file like Esc");
         assert!(app.session.is_none());
+    }
+
+    #[test]
+    fn ctrl_j_k_cycle_songs_and_stay_in_edit_mode() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e')); // EDIT
+        assert_eq!(app.mode, Mode::Edit);
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.mode, Mode::Edit, "should stay in EDIT after cycling");
+        assert_eq!(app.session.as_ref().unwrap().index, 1);
+
+        press_ctrl(&mut app, KeyCode::Up);
+        assert_eq!(app.mode, Mode::Edit);
+        assert_eq!(app.session.as_ref().unwrap().index, 0);
     }
 
     #[test]

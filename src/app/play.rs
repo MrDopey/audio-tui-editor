@@ -23,8 +23,20 @@ impl App {
                 let delta = if ctrl { large } else { small };
                 self.with_player(|p| p.seek_by(delta));
             }
-            KeyCode::Up | KeyCode::Char('k') => self.change_volume(step),
-            KeyCode::Down | KeyCode::Char('j') => self.change_volume(-step),
+            KeyCode::Up | KeyCode::Char('k') => {
+                if ctrl {
+                    self.cycle_song(-1);
+                } else {
+                    self.change_volume(step);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if ctrl {
+                    self.cycle_song(1);
+                } else {
+                    self.change_volume(-step);
+                }
+            }
             KeyCode::Char('g') => self.with_player(|p| p.seek_to(0.0)),
             KeyCode::Char('G') => self.with_player(|p| p.seek_to(p.duration())),
             KeyCode::Char('e') => self.enter_edit_mode(),
@@ -96,5 +108,33 @@ mod tests {
         assert_eq!(app.session.as_ref().unwrap().player.position(), 0.0);
         press(&mut app, KeyCode::Char('G'));
         assert_eq!(app.session.as_ref().unwrap().player.position(), 600.0);
+    }
+
+    #[test]
+    fn ctrl_j_k_cycle_songs_without_touching_volume() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0), ("c.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        let starting_volume = app.session.as_ref().unwrap().player.volume();
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.session.as_ref().unwrap().index, 1);
+        assert_eq!(app.session.as_ref().unwrap().player.volume(), starting_volume);
+
+        press_ctrl(&mut app, KeyCode::Down);
+        assert_eq!(app.session.as_ref().unwrap().index, 2);
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.session.as_ref().unwrap().index, 0, "wraps around");
+
+        press_ctrl(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.session.as_ref().unwrap().index, 2, "wraps the other way");
+
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(
+            app.session.as_ref().unwrap().player.volume(),
+            starting_volume + app.config.playback.volume_step,
+            "plain k still changes volume"
+        );
     }
 }

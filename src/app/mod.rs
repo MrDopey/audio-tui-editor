@@ -665,6 +665,40 @@ impl App {
         self.mode = Mode::Play;
     }
 
+    /// Cycle to the next (`delta = 1`) or previous (`delta = -1`) song in the
+    /// current folder, wrapping around, and stay in the same mode (Edit or
+    /// Metadata) so the user can keep tagging/marking their way through the
+    /// folder. No-op with fewer than two files. If the outgoing session is
+    /// dirty, `request_nav` defers to a discard-confirmation overlay instead
+    /// of opening immediately; in that case the mode isn't preserved and the
+    /// confirmed nav lands in Play mode as usual.
+    pub(super) fn cycle_song(&mut self, delta: isize) {
+        if self.files.len() < 2 {
+            return;
+        }
+        let Some(current) = self.session.as_ref().map(|s| s.index) else {
+            return;
+        };
+        let len = self.files.len() as isize;
+        let next = (current as isize + delta).rem_euclid(len) as usize;
+        let resume_mode = self.mode;
+        self.request_nav(PendingNav::Open(next));
+
+        if self.session.as_ref().is_some_and(|s| s.index == next) {
+            match resume_mode {
+                Mode::Edit => {
+                    let config = self.config.clone();
+                    if let Some(session) = &mut self.session {
+                        session.start_auto_markers(&config);
+                    }
+                    self.mode = Mode::Edit;
+                }
+                Mode::Metadata => self.mode = Mode::Metadata,
+                Mode::Browse | Mode::Play => {}
+            }
+        }
+    }
+
     // ---- marker helpers --------------------------------------------------
 
     fn nudge_marker(&mut self, kind: MarkerKind, delta: f64) {

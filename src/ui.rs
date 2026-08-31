@@ -528,12 +528,14 @@ fn hint_text(app: &App) -> &'static str {
             "j/k move  gg/G ends  C-d/C-u page  / search  n/N repeat  Enter open  ? help  q quit"
         }
         Mode::Play => {
-            "space play  h/l seek  C-h/C-l ±60s  g/G start/end  j/k volume  e edit  m metadata  :w save  Esc back"
+            "space play  h/l seek  C-h/C-l ±60s  g/G start/end  j/k volume  C-j/C-k song  e edit  m metadata  :w save  Esc back"
         }
         Mode::Edit => {
-            "h/l move marker  C-h/C-l large  Tab switch  b/e set here  B/E/i type +10s -1m 50%  a auto  r reset both  :w save  Esc back"
+            "h/l move marker  C-h/C-l large  C-j/C-k song  Tab switch  b/e set here  B/E/i type +10s -1m 50%  a auto  r reset both  :w save  Esc back"
         }
-        Mode::Metadata => "j/k field  Enter edit  u revert  :w save  :wq save & leave  Esc back",
+        Mode::Metadata => {
+            "j/k field  C-j/C-k song  Enter edit  u revert  :w save  :wq save & leave  Esc back"
+        }
     }
 }
 
@@ -669,12 +671,14 @@ fn help_lines() -> Vec<String> {
         "  Ctrl-←/→, C-h/l seek by the large step",
         "  g / G           seek to the start / end of the file",
         "  ↑/↓, k/j        volume up / down",
+        "  Ctrl-↑/↓, C-k/j next / previous song in this folder",
         "  e               EDIT mode          m   METADATA mode",
         "  Esc, q          back to BROWSE",
         "",
         "EDIT",
         "  ←/→, h/l        move the active marker (fine step)",
         "  Ctrl-←/→, C-h/l move the active marker (large step)",
+        "  Ctrl-↑/↓, C-k/j next / previous song in this folder",
         "  Tab             switch between the beginning and ending marker",
         "  b / e           set the beginning / ending marker at the playhead",
         "  B / E           type a position for the beginning / ending marker",
@@ -688,6 +692,7 @@ fn help_lines() -> Vec<String> {
         "",
         "METADATA",
         "  j/k             next / previous field",
+        "  Ctrl-↑/↓, C-k/j next / previous song in this folder",
         "  Enter or i      edit the field       u   revert the field",
         "  Esc, q          back to PLAY",
         "",
