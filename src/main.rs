@@ -49,6 +49,12 @@ fn main() -> Result<()> {
         eprintln!("audioedit: using configuration {}", path.display());
     }
 
+    anyhow::ensure!(
+        std::io::stdin().is_terminal(),
+        "refusing to start the interactive UI without a terminal attached. \
+         Use --apply-defaults or --dry-run for a non-interactive run."
+    );
+
     let output = if cli.no_audio {
         AudioOutput::silent()
     } else {
