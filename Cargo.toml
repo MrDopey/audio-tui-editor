@@ -3,6 +3,7 @@ name = "audioedit"
 version = "0.1.0"
 edition = "2021"
 description = "Vim-like TUI audio editor: browse, play, trim and edit metadata for audio files"
+license = "MIT"
 
 [lib]
 name = "audioedit"
@@ -25,3 +26,26 @@ unicode-width = "0.2"
 
 [profile.release]
 opt-level = 2
+
+# Packaging metadata consumed by `cargo deb` / `cargo generate-rpm` in
+# .github/workflows/release.yml. Both tools package an already-built binary
+# (built for the matrix's target triple), so dependency auto-detection via
+# `ldd` is disabled here since that only works for the host's own arch.
+[package.metadata.deb]
+section = "sound"
+priority = "optional"
+depends = "libasound2 | libasound2t64"
+assets = [
+    ["target/release/audioedit", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/audioedit/README.md", "644"],
+    ["config.example.toml", "usr/share/doc/audioedit/config.example.toml", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/audioedit", dest = "/usr/bin/audioedit", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/audioedit/README.md", mode = "644", doc = true },
+    { source = "config.example.toml", dest = "/usr/share/doc/audioedit/config.example.toml", mode = "644", doc = true },
+]
+auto-req = "disabled"
+requires = ["alsa-lib"]

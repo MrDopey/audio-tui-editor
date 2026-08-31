@@ -1,0 +1,272 @@
+name: Release
+
+# Only actions published by GitHub's own `actions` org are used here.
+# Everything else (Rust toolchain, target support, and the cargo-edit /
+# cross / cargo-deb / cargo-generate-rpm tools) comes from what GitHub's
+# hosted runners ship preinstalled (rustup + cargo) or is installed
+# straight from crates.io via `cargo install`, not from third-party
+# GitHub Actions.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: Version part to bump before this release
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  BIN_NAME: audioedit
+
+jobs:
+  # Bump Cargo.toml per the chosen bump_type and commit it. Everything
+  # downstream builds and releases this commit's version.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      # A "patch" dispatch releases whatever version is already sitting in
+      # Cargo.toml (the previous run's post-release bump already prepared
+      # it). "minor"/"major" need an explicit bump + commit first.
+      - name: Cache cargo-edit binary
+        if: inputs.bump_type != 'patch'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-set-version
+          key: ${{ runner.os }}-cargo-edit-bin
+
+      - name: Install cargo-edit
+        if: inputs.bump_type != 'patch'
+        run: command -v cargo-set-version >/dev/null || cargo install cargo-edit --locked
+
+      - name: Bump version
+        if: inputs.bump_type != 'patch'
+        run: |
+          set -euo pipefail
+          cargo set-version --bump "${{ inputs.bump_type }}"
+          cargo update --workspace
+
+      - name: Commit and push version bump
+        if: inputs.bump_type != 'patch'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): bump version to v$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Resolve release version
+        id: bump
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            cross: false
+            packages: deb,rpm
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            cross: true
+            packages: deb,rpm
+          - os: ubuntu-latest
+            target: arm-unknown-linux-gnueabihf
+            platform: linux
+            cross: true
+            packages: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: macos
+            cross: false
+            packages: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos
+            cross: false
+            packages: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            cross: false
+            packages: ""
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            platform: windows
+            cross: false
+            packages: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo registry and target dir
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Install Linux build deps
+        if: matrix.platform == 'linux' && matrix.cross == false
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Install cross
+        if: matrix.cross == true
+        run: command -v cross >/dev/null || cargo install cross --locked
+
+      - name: Install packaging tools
+        if: contains(matrix.packages, 'deb') || contains(matrix.packages, 'rpm')
+        run: |
+          set -euo pipefail
+          command -v cargo-deb >/dev/null || cargo install cargo-deb --locked
+          command -v cargo-generate-rpm >/dev/null || cargo install cargo-generate-rpm --locked
+
+      - name: Build (native)
+        if: matrix.cross == false
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross == true
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          STAGE="stage"
+          mkdir -p dist "$STAGE"
+
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            cp "target/${TARGET}/release/${BIN_NAME}.exe" "$STAGE/"
+          else
+            cp "target/${TARGET}/release/${BIN_NAME}" "$STAGE/"
+            chmod +x "$STAGE/${BIN_NAME}"
+          fi
+          cp README.md config.example.toml LICENSE "$STAGE/"
+
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            OUT="${BIN_NAME}-${VERSION}-${TARGET}.zip"
+            (cd "$STAGE" && 7z a "../dist/${OUT}" .)
+          else
+            OUT="${BIN_NAME}-${VERSION}-${TARGET}.tar.gz"
+            tar -C "$STAGE" -czf "dist/${OUT}" .
+          fi
+
+      - name: Build .deb
+        if: contains(matrix.packages, 'deb')
+        run: cargo deb --target ${{ matrix.target }} --no-build --output dist/
+
+      - name: Build .rpm
+        if: contains(matrix.packages, 'rpm')
+        run: cargo generate-rpm --target ${{ matrix.target }} --output dist/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ needs.prepare.outputs.tag }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --target "${{ needs.prepare.outputs.sha }}" \
+            --title "${{ needs.prepare.outputs.tag }}" \
+            --generate-notes
+
+  # Leave the branch on a fresh dev patch version so the next dispatch
+  # (of any bump_type) starts from an unreleased version number.
+  post-release:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Cache cargo-edit binary
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-set-version
+          key: ${{ runner.os }}-cargo-edit-bin
+
+      - name: Install cargo-edit
+        run: command -v cargo-set-version >/dev/null || cargo install cargo-edit --locked
+
+      - name: Bump to next patch version
+        id: bump
+        run: |
+          set -euo pipefail
+          cargo set-version --bump patch
+          cargo update --workspace
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): bump version to v${{ steps.bump.outputs.version }} (post-release)"
+          git push origin HEAD:${{ github.ref_name }}

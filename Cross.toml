@@ -1,0 +1,17 @@
+# Used by `cross build` in .github/workflows/release.yml for the
+# aarch64 and armv6 Linux targets, which cross-compile via cross-rs
+# docker images rather than the host toolchain.
+#
+# rodio's ALSA backend (alsa-sys) needs libasound2-dev for the *target*
+# architecture to link against, which isn't preinstalled in the cross
+# images, so it's added via a pre-build hook.
+
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture arm64 && apt-get update && apt-get install --assume-yes libasound2-dev:arm64",
+]
+
+[target.arm-unknown-linux-gnueabihf]
+pre-build = [
+    "dpkg --add-architecture armhf && apt-get update && apt-get install --assume-yes libasound2-dev:armhf",
+]
