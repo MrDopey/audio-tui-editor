@@ -184,7 +184,7 @@ jobs:
             cp "target/${TARGET}/release/${BIN_NAME}" "$STAGE/"
             chmod +x "$STAGE/${BIN_NAME}"
           fi
-          cp README.md config.example.toml LICENSE "$STAGE/"
+          cp readme.md config.example.toml LICENSE "$STAGE/"
 
           if [[ "${{ matrix.platform }}" == "windows" ]]; then
             OUT="${BIN_NAME}-${VERSION}-${TARGET}.zip"

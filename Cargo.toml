@@ -39,14 +39,14 @@ priority = "optional"
 depends = "libasound2 | libasound2t64"
 assets = [
     ["target/release/audioedit", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/audioedit/README.md", "644"],
+    ["readme.md", "usr/share/doc/audioedit/README.md", "644"],
     ["config.example.toml", "usr/share/doc/audioedit/config.example.toml", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/audioedit", dest = "/usr/bin/audioedit", mode = "755" },
-    { source = "README.md", dest = "/usr/share/doc/audioedit/README.md", mode = "644", doc = true },
+    { source = "readme.md", dest = "/usr/share/doc/audioedit/README.md", mode = "644", doc = true },
     { source = "config.example.toml", dest = "/usr/share/doc/audioedit/config.example.toml", mode = "644", doc = true },
 ]
 auto-req = "disabled"
