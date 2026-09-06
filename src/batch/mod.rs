@@ -7,6 +7,7 @@
 //! otherwise but no file is written, so the user can see what the policy would
 //! do before committing to it.
 
+mod item;
 mod report;
 
 use std::sync::mpsc::Sender;
@@ -17,7 +18,8 @@ use crate::config::{AutoTrim, Config};
 use crate::media::probe::{MediaInfo, SkippedFile};
 use crate::media::{autotrim, ffmpeg};
 
-pub use report::{BatchItem, BatchReport, ItemStatus, OutputFormat, Trim, CSV_HEADER};
+pub use item::{BatchItem, ItemStatus, Trim};
+pub use report::{BatchReport, OutputFormat, CSV_HEADER};
 
 /// The confirmation text shown before a folder-wide run (design §17), shared
 /// by the CLI's interactive prompt and the TUI's confirmation overlay so the
