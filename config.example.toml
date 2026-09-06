@@ -20,5 +20,5 @@ large_step_seconds = 10
 begin_threshold_db = -40
 end_threshold_db = -40
 # How long the level must stay below the threshold to count, in seconds.
-begin_min_duration = 1
-end_min_duration = 1
+begin_min_duration = 3
+end_min_duration = 5

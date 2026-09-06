@@ -234,6 +234,12 @@ end_min_duration = 5
     }
 
     #[test]
+    fn the_shipped_example_file_matches_the_defaults() {
+        let parsed: Config = toml::from_str(include_str!("../config.example.toml")).unwrap();
+        assert_eq!(parsed, Config::default());
+    }
+
+    #[test]
     fn partial_config_keeps_defaults() {
         let parsed: Config = toml::from_str("[auto_trim]\nbegin_threshold_db = -30\n").unwrap();
         assert_eq!(parsed.auto_trim.begin_threshold_db, -30.0);
