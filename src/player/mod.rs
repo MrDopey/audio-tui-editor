@@ -15,6 +15,9 @@ const OUTPUT_RATE: u32 = 48_000;
 const OUTPUT_CHANNELS: u16 = 2;
 /// Samples pulled from the decoder at a time.
 const CHUNK_SAMPLES: usize = 8_192;
+/// How close to the end counts as "at end," to absorb rounding in the
+/// decoder's reported position.
+const END_OF_FILE_EPSILON: f64 = 0.05;
 
 /// The audio device, opened once for the lifetime of the application.
 ///
@@ -135,8 +138,8 @@ impl AudioPlayer {
     /// True once playback has run past the end of the file (design §6).
     pub fn at_end(&self) -> bool {
         match &self.sink {
-            Some(sink) => sink.empty() || self.position() >= self.duration - 0.05,
-            None => self.position() >= self.duration - 0.05,
+            Some(sink) => sink.empty() || self.position() >= self.duration - END_OF_FILE_EPSILON,
+            None => self.position() >= self.duration - END_OF_FILE_EPSILON,
         }
     }
 
