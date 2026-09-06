@@ -185,6 +185,7 @@ mod tests {
         app.poll_save();
 
         assert!(matches!(app.overlay, Overlay::Summary(_)));
+        assert!(app.refresh_rx.is_some(), "must spawn the file-refresh worker");
     }
 
     #[test]
