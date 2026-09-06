@@ -96,6 +96,7 @@ pub(super) fn run_attempt(
 
     command.arg(output);
 
+    crate::debug::log_command(&command);
     let result = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -179,11 +180,11 @@ fn preferred(candidates: &[&str]) -> Option<String> {
 fn encoders() -> &'static Vec<String> {
     static ENCODERS: OnceLock<Vec<String>> = OnceLock::new();
     ENCODERS.get_or_init(|| {
-        let Ok(output) = backend_command(&ffmpeg_bin())
-            .args(["-v", "error", "-hide_banner", "-encoders"])
-            .stdin(Stdio::null())
-            .output()
-        else {
+        let mut command = backend_command(&ffmpeg_bin());
+        command.args(["-v", "error", "-hide_banner", "-encoders"]);
+        command.stdin(Stdio::null());
+        crate::debug::log_command(&command);
+        let Ok(output) = command.output() else {
             return Vec::new();
         };
         String::from_utf8_lossy(&output.stdout)

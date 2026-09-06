@@ -30,6 +30,18 @@
     }
 
     #[test]
+    fn temp_file_survives_drop_once_kept() {
+        let dir = std::env::temp_dir().join(format!("audioedit-tmp-keep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("x.wav");
+        let temp = TempFile::beside(&source).unwrap();
+        std::fs::write(&temp.path, b"partial").unwrap();
+        let path = temp.into_kept_path();
+        assert!(path.exists(), "a kept temporary file must survive drop");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn processing_labels_match_the_spec() {
         assert_eq!(Processing::StreamCopy.to_string(), "stream copy");
         assert_eq!(Processing::Reencode.to_string(), "re-encoding");

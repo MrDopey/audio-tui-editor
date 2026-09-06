@@ -77,7 +77,8 @@ pub fn analyse(path: &Path, duration: f64) -> Result<Waveform> {
 }
 
 fn decode(path: &Path, duration: f64) -> Result<Waveform> {
-    let mut child = backend_command(&ffmpeg_bin())
+    let mut command = backend_command(&ffmpeg_bin());
+    command
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
         .args([
@@ -93,7 +94,9 @@ fn decode(path: &Path, duration: f64) -> Result<Waveform> {
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null())
+        .stdin(Stdio::null());
+    crate::debug::log_command(&command);
+    let mut child = command
         .spawn()
         .map_err(|err| {
             anyhow::anyhow!(

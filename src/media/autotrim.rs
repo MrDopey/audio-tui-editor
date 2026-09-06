@@ -108,13 +108,16 @@ fn trailing_edge(silences: &[Silence], duration: f64) -> (f64, bool) {
 
 fn run_silencedetect(path: &Path, threshold_db: f64, min_duration: f64) -> Result<Vec<Silence>> {
     let filter = format!("silencedetect=noise={threshold_db}dB:d={min_duration}");
-    let output = backend_command(&ffmpeg_bin())
+    let mut command = backend_command(&ffmpeg_bin());
+    command
         .args(["-v", "info", "-nostdin", "-i"])
         .arg(path)
         .args(["-map", "0:a:0", "-af", &filter, "-f", "null", "-"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    crate::debug::log_command(&command);
+    let output = command
         .output()
         .with_context(|| format!("running silence detection on {}", path.display()))?;
 

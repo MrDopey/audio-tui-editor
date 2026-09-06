@@ -83,8 +83,8 @@ is an annotated copy of the defaults below.
 | `auto_trim.end_min_duration` | `5` | How long trailing silence must last to be trimmed, in seconds |
 
 The only environment variables read are `AUDIOEDIT_FFMPEG` and
-`AUDIOEDIT_FFPROBE`, which point at alternative ffmpeg builds. There is no
-`.env` file.
+`AUDIOEDIT_FFPROBE`, which point at alternative ffmpeg builds, and
+`AUDIOEDIT_DEBUG` (same as `--debug`, see below). There is no `.env` file.
 
 ---
 
@@ -167,6 +167,7 @@ file *would* become.
 | `--dry-run`, `-n` | Report what `--apply-defaults` would do without modifying any file |
 | `--yes`, `-y` | Skip the confirmation prompt before a folder-wide run |
 | `--no-audio` | Do not open an audio device (browsing and editing still work) |
+| `--debug` | Log every ffmpeg/ffprobe command run, capture a backtrace on error, and keep a failed save's temporary output on disk for inspection (same as `AUDIOEDIT_DEBUG=1`) |
 
 `audioedit --help` lists the full set, including a per-run override for every
 configuration value.
@@ -417,6 +418,10 @@ exercised directly by the integration tests.
 
 **`ffmpeg` or `ffprobe` not found** — both must be on `PATH`, or pointed at with
 `AUDIOEDIT_FFMPEG` / `AUDIOEDIT_FFPROBE`.
+
+**A save or spawn failure needs more detail** — re-run with `--debug` (or
+`AUDIOEDIT_DEBUG=1`) to log every ffmpeg/ffprobe command with its argv/env
+size, get a backtrace, and keep a failed save's temporary output on disk.
 
 **The build fails looking for ALSA headers** — install `libasound2-dev` and
 `pkg-config`. They are build-time requirements even if you only run

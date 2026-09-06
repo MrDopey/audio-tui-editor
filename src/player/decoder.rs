@@ -24,7 +24,8 @@ pub(super) struct FfmpegSource {
 
 impl FfmpegSource {
     pub(super) fn spawn(path: &Path, offset: f64, remaining: f64) -> Option<FfmpegSource> {
-        let mut child = backend_command(&ffmpeg_bin())
+        let mut command = backend_command(&ffmpeg_bin());
+        command
             .args(["-v", "error", "-nostdin"])
             .arg("-ss")
             .arg(format!("{offset:.6}"))
@@ -43,9 +44,9 @@ impl FfmpegSource {
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
+            .stderr(Stdio::null());
+        crate::debug::log_command(&command);
+        let mut child = command.spawn().ok()?;
         let stdout = child.stdout.take()?;
         Some(FfmpegSource {
             child,

@@ -22,6 +22,13 @@ const FRAME: Duration = Duration::from_millis(50);
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    audioedit::debug::enable_if(audioedit::debug::requested(cli.debug));
+    if audioedit::debug::is_enabled() && std::env::var("RUST_BACKTRACE").is_err() {
+        // SAFETY: called once, before any other thread exists (start of
+        // `main`), and only to set a var the user hasn't already set.
+        unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
+    }
+
     // Startup (design §3): folder, files, configuration, CLI overrides.
     let folder = match &cli.folder {
         Some(folder) => folder.clone(),

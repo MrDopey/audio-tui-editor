@@ -8,6 +8,7 @@ pub mod app;
 pub mod batch;
 pub mod cli;
 pub mod config;
+pub mod debug;
 pub mod media;
 pub mod player;
 mod text;

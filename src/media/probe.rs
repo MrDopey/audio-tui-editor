@@ -136,7 +136,8 @@ fn normalise_tags(raw: &BTreeMap<String, serde_json::Value>) -> BTreeMap<String,
 /// Probe a file. Returns `Ok(None)` when the file is readable but holds no
 /// audio stream, and `Err` when ffprobe could not read it at all.
 pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
-    let output = backend_command(&ffprobe_bin())
+    let mut command = backend_command(&ffprobe_bin());
+    command
         .args([
             "-v",
             "error",
@@ -146,7 +147,9 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
             "-show_streams",
             "-show_chapters",
         ])
-        .arg(path)
+        .arg(path);
+    crate::debug::log_command(&command);
+    let output = command
         .output()
         .map_err(|err| {
             anyhow::anyhow!(

@@ -61,10 +61,12 @@ impl SaveRequest {
     }
 }
 
-/// Deletes its path unless committed, so no failure can leave litter behind.
+/// Deletes its path unless committed (saved) or kept (debug mode, on
+/// failure), so no ordinary failure can leave litter behind.
 struct TempFile {
     path: PathBuf,
     committed: bool,
+    kept: bool,
 }
 
 impl TempFile {
@@ -90,17 +92,25 @@ impl TempFile {
         Ok(TempFile {
             path,
             committed: false,
+            kept: false,
         })
     }
 
     fn commit(mut self) {
         self.committed = true;
     }
+
+    /// For debug mode: keeps the file on disk for post-mortem inspection
+    /// instead of deleting it, and returns its path.
+    fn into_kept_path(mut self) -> PathBuf {
+        self.kept = true;
+        self.path.clone()
+    }
 }
 
 impl Drop for TempFile {
     fn drop(&mut self) {
-        if !self.committed {
+        if !self.committed && !self.kept {
             let _ = std::fs::remove_file(&self.path);
         }
     }
@@ -282,8 +292,18 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
         });
     }
 
+    let kept = if crate::debug::is_enabled() {
+        let mut paths = vec![format!("{}", temp.into_kept_path().display())];
+        if let Some(sidecar) = cover_art_sidecar {
+            paths.push(format!("{}", sidecar.into_kept_path().display()));
+        }
+        format!("\nleft for inspection (--debug): {}", paths.join(", "))
+    } else {
+        String::new()
+    };
+
     bail!(
-        "could not produce a valid output for {}. The original file has NOT been modified.\n{}",
+        "could not produce a valid output for {}. The original file has NOT been modified.\n{}{kept}",
         info.path.display(),
         failures.join("\n")
     );

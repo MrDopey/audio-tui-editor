@@ -18,20 +18,30 @@ use std::process::Stdio;
 use super::super::probe::MediaInfo;
 use super::super::{backend_command, ffmpeg_bin};
 
-/// An `ffmetadata`-format sidecar file, deleted when dropped.
+/// An `ffmetadata`-format sidecar file, deleted when dropped unless kept.
 pub(super) struct MetadataSidecar {
     path: PathBuf,
+    kept: bool,
 }
 
 impl MetadataSidecar {
     pub(super) fn path(&self) -> &Path {
         &self.path
     }
+
+    /// For debug mode: keeps the file on disk for post-mortem inspection
+    /// instead of deleting it, and returns its path.
+    pub(super) fn into_kept_path(mut self) -> PathBuf {
+        self.kept = true;
+        self.path.clone()
+    }
 }
 
 impl Drop for MetadataSidecar {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        if !self.kept {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -66,7 +76,7 @@ pub(super) fn build_sidecar(
 
     let path = beside.join(sidecar_file_name(&info.path));
     std::fs::write(&path, ffmetadata_body(&tags, &picture)).ok()?;
-    Some(MetadataSidecar { path })
+    Some(MetadataSidecar { path, kept: false })
 }
 
 /// Named after the source file, not just the process, since batch runs save
@@ -117,7 +127,8 @@ fn escape_ffmetadata_value(value: &str) -> String {
 /// ffmpeg erroring) yields `None` rather than failing the save — losing
 /// cover art beats losing the file.
 fn extract_metadata_block_picture(path: &Path) -> Option<String> {
-    let output = backend_command(&ffmpeg_bin())
+    let mut command = backend_command(&ffmpeg_bin());
+    command
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
         .args([
@@ -132,9 +143,9 @@ fn extract_metadata_block_picture(path: &Path) -> Option<String> {
             "-",
         ])
         .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
+        .stderr(Stdio::null());
+    crate::debug::log_command(&command);
+    let output = command.output().ok()?;
     if !output.status.success() || output.stdout.is_empty() {
         return None;
     }
@@ -208,6 +219,31 @@ fn base64_encode(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidecar_survives_drop_once_kept_but_not_otherwise() {
+        let dir = std::env::temp_dir().join(format!("audioedit-sidecar-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cover.ffmeta");
+        std::fs::write(&path, b"data").unwrap();
+
+        let sidecar = MetadataSidecar {
+            path: path.clone(),
+            kept: false,
+        };
+        drop(sidecar);
+        assert!(!path.exists(), "an unkept sidecar must be cleaned up");
+
+        std::fs::write(&path, b"data").unwrap();
+        let sidecar = MetadataSidecar {
+            path: path.clone(),
+            kept: false,
+        };
+        let kept_path = sidecar.into_kept_path();
+        assert!(kept_path.exists(), "a kept sidecar must survive drop");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn sniffs_known_image_formats() {

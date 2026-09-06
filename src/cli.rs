@@ -49,6 +49,13 @@ pub struct Cli {
     #[arg(long)]
     pub no_audio: bool,
 
+    /// Log every ffmpeg/ffprobe command run (with argv/env byte sizes),
+    /// capture a backtrace on error, and keep a failed save's temporary
+    /// output on disk for inspection. Same as setting AUDIOEDIT_DEBUG=1.
+    /// Backtraces may be missing symbols in a release build (stripped).
+    #[arg(long)]
+    pub debug: bool,
+
     /// Seek amount for the arrow keys and h/l (default: 10s).
     #[arg(
         long,

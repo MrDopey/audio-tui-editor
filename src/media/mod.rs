@@ -77,12 +77,13 @@ pub fn ensure_backend_available() -> Result<()> {
 /// A binary is only "available" if it both spawns and exits successfully; a
 /// binary that spawns but immediately errors out is not usable either.
 fn check_runnable(bin: &str) -> Result<()> {
-    let status = match backend_command(bin)
+    let mut command = backend_command(bin);
+    command
         .arg("-version")
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-    {
+        .stderr(std::process::Stdio::null());
+    crate::debug::log_command(&command);
+    let status = match command.status() {
         Ok(status) => status,
         Err(err) => bail!("{}", spawn_error_hint(bin, &err)),
     };
