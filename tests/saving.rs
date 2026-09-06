@@ -206,7 +206,7 @@ fn metadata_edits_are_written_for_every_container() {
 }
 
 #[test]
-fn metadata_edits_are_written_and_verified() {
+fn metadata_removal_and_untrimmed_duration_are_preserved() {
     let ws = Workspace::new("metadata");
     let path = ws.make("a.flac", &["-c:a", "flac"]);
     let info = probe_ok(&path);

@@ -28,7 +28,7 @@ fn waveform_analysis_follows_the_amplitude_envelope() {
 }
 
 #[test]
-fn waveform_analysis_is_cached_and_returns_the_same_shape() {
+fn analysing_the_same_file_twice_is_deterministic() {
     let ws = Workspace::new("wfcache");
     let path = ws.make("a.flac", &["-c:a", "flac"]);
     let info = probe_ok(&path);
