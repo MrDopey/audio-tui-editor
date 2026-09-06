@@ -64,9 +64,21 @@ pub(super) fn build_sidecar(
         }
     }
 
-    let path = beside.join(format!(".audioedit-cover-{}.ffmeta", std::process::id()));
+    let path = beside.join(sidecar_file_name(&info.path));
     std::fs::write(&path, ffmetadata_body(&tags, &picture)).ok()?;
     Some(MetadataSidecar { path })
+}
+
+/// Named after the source file, not just the process, since batch runs save
+/// multiple files from the same folder concurrently (one thread per
+/// `--jobs` slot, all sharing this one process's PID) — the source's own
+/// stem is what keeps two such sidecars from colliding on the same path.
+fn sidecar_file_name(source: &Path) -> String {
+    let stem = source
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "audio".to_string());
+    format!(".audioedit-cover-{stem}-{}.ffmeta", std::process::id())
 }
 
 /// The `ffmetadata`-format text body: a `;FFMETADATA1` header, one escaped
@@ -252,5 +264,15 @@ mod tests {
         assert!(body.contains("title=My Title\n"));
         assert!(body.contains("artist=A & B\n"));
         assert!(body.ends_with("metadata_block_picture=BASE64==\n"));
+    }
+
+    #[test]
+    fn sidecar_names_differ_for_different_source_files_in_the_same_directory() {
+        // A batch run saves multiple files from one folder concurrently, all
+        // sharing this process's PID -- the source's own stem must be what
+        // keeps their sidecars from colliding on the same path.
+        let a = sidecar_file_name(Path::new("/music/Track One.opus"));
+        let b = sidecar_file_name(Path::new("/music/Track Two.opus"));
+        assert_ne!(a, b);
     }
 }
