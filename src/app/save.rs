@@ -4,7 +4,7 @@ use std::sync::mpsc::channel;
 
 use anyhow::Context;
 
-use super::{try_recv_result, App, Overlay, Session};
+use super::{try_recv_result, App, Overlay, Session, NO_FILE_OPEN};
 use crate::media::ffmpeg::{self, SaveOutcome, SaveRequest};
 use crate::media::probe::{self, MediaInfo};
 
@@ -50,7 +50,7 @@ impl App {
             self.info("Begin/End swapped before saving.");
         }
         let Some(session) = &self.session else {
-            self.warn("No file is open. Open one with Enter.");
+            self.warn(NO_FILE_OPEN);
             return;
         };
 

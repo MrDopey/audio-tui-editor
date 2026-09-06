@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, Session};
+use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, Session, NO_FILE_OPEN};
 use crate::player::AudioPlayer;
 use crate::timespec::Marker;
 
@@ -132,7 +132,7 @@ impl App {
 
     pub(super) fn recalculate_auto_markers(&mut self) {
         if self.session.is_none() {
-            self.warn("No file is open.");
+            self.warn(NO_FILE_OPEN);
             return;
         }
         let config = self.config.clone();

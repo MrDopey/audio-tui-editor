@@ -1,6 +1,6 @@
 //! The `:` command line and prompt submission (design §19).
 
-use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind};
+use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, NO_FILE_OPEN};
 use crate::batch::RunMode;
 use crate::timespec::{parse_cursor_pos, Marker};
 
@@ -58,7 +58,7 @@ impl App {
     /// transient crossing like any other drag.
     fn set_marker_from_expression(&mut self, kind: MarkerKind, input: &str) {
         let Some(duration) = self.session.as_ref().map(super::Session::duration) else {
-            self.warn("No file is open.");
+            self.warn(NO_FILE_OPEN);
             return;
         };
         match Marker::parse(input, duration) {
@@ -89,7 +89,7 @@ impl App {
             .as_ref()
             .map(|s| (s.marker(kind).seconds(), s.duration()))
         else {
-            self.warn("No file is open.");
+            self.warn(NO_FILE_OPEN);
             return;
         };
         match parse_cursor_pos(input, current, duration) {
@@ -120,7 +120,7 @@ impl App {
             .as_ref()
             .map(|s| (s.player.position(), s.duration()))
         else {
-            self.warn("No file is open.");
+            self.warn(NO_FILE_OPEN);
             return;
         };
         match parse_cursor_pos(input, current, duration) {
@@ -184,7 +184,7 @@ impl App {
                 if self.session.is_some() {
                     self.reset_markers();
                 } else {
-                    self.warn("No file is open.");
+                    self.warn(NO_FILE_OPEN);
                 }
             }
             other => self.warn(format!("Unknown command: :{other}. Try :help")),

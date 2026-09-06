@@ -159,6 +159,9 @@ pub type FileRow = (String, String, String);
 /// `Session::drag_active_marker`) auto-corrects on its own, in `App::tick`.
 const CURSOR_SETTLE_DELAY: Duration = Duration::from_secs(3);
 
+/// Shown by any command that needs an open file when there isn't one.
+pub(super) const NO_FILE_OPEN: &str = "No file is open. Open one with Enter.";
+
 pub struct App {
     pub config: Config,
     pub folder: PathBuf,
