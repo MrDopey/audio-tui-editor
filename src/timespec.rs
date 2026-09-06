@@ -18,6 +18,11 @@ pub enum PosSpec {
     FromEnd(f64),
     /// `P%`: a fraction of the total duration.
     Percent(f64),
+    /// `+X`/`-X` relative to a marker's own current position ([`parse_marker_pos`]),
+    /// already resolved to an absolute offset at parse time. Kept distinct
+    /// from `Absolute` only so [`Marker::is_relative`] still shows the typed
+    /// expression alongside the resolved timestamp.
+    Resolved(f64),
 }
 
 impl PosSpec {
@@ -28,6 +33,7 @@ impl PosSpec {
             PosSpec::FromStart(s) => s,
             PosSpec::FromEnd(s) => duration - s,
             PosSpec::Percent(p) => duration * p / 100.0,
+            PosSpec::Resolved(s) => s,
         };
         raw.clamp(0.0, duration.max(0.0))
     }
@@ -99,7 +105,12 @@ impl fmt::Display for Marker {
     }
 }
 
-/// Parse a position expression: `+10s`, `-1m`, `50%`, `1:23`, `90`, `1.5s`.
+/// Parse a position expression relative to the file itself: `+10s`, `-1m`,
+/// `50%`, `1:23`, `90`, `1.5s` — `+`/`-` are always from the file's start/end.
+/// Used where there's no "current position" to be relative to (e.g.
+/// [`Marker::parse`]); see [`parse_marker_pos`] and [`parse_cursor_pos`] for
+/// the marker- and cursor-relative counterparts, which give `+`/`-` a
+/// different meaning from this function's.
 pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
     let s = input.trim();
     if s.is_empty() {
@@ -118,10 +129,10 @@ pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
     }
 
     // `++`/`--` mean the same thing here as `+`/`-` (there's no "current
-    // position" for a Begin/End marker to be relative to, unlike the
-    // Cursor prompt's `parse_cursor_pos`, where they're a distinct meaning
-    // from single `+`/`-`) — accepted so the same doubled-dash habit that
-    // prompt teaches doesn't silently misparse as a negative duration here.
+    // position" for a Begin/End marker to be relative to, unlike
+    // `parse_marker_pos`/`parse_cursor_pos`, where they're a distinct meaning
+    // from single `+`/`-`) — accepted so the same doubled-dash habit those
+    // teach doesn't silently misparse as a negative duration here.
     if let Some(rest) = s.strip_prefix("++") {
         return Ok(PosSpec::FromStart(parse_duration(rest)?));
     }
@@ -137,8 +148,33 @@ pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
     Ok(PosSpec::Absolute(parse_duration(s)?))
 }
 
+/// Parse a Begin/End marker expression relative to that marker's own
+/// current position — the same `+`/`-` meaning the Cursor prompt's
+/// [`parse_cursor_pos`] gives them, unified here so `:b`/`:e` on the command
+/// line and the `b`/`e` prompt agree: `+X`/`-X` are `X` seconds after/before
+/// `current` (that marker's own position, not the file's start/end);
+/// `++X`/`--X`, bare `X`, `mm:ss` and `P%` are unchanged from [`parse_pos`].
+pub fn parse_marker_pos(input: &str, current: f64) -> Result<PosSpec, String> {
+    let s = input.trim();
+    if let Some(rest) = s.strip_prefix("++") {
+        return Ok(PosSpec::FromStart(parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix("--") {
+        return Ok(PosSpec::FromEnd(parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix('+') {
+        return Ok(PosSpec::Resolved(current + parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix('-') {
+        return Ok(PosSpec::Resolved(current - parse_duration(rest)?));
+    }
+    parse_pos(s)
+}
+
 /// Parse a cursor-jump expression relative to a `current` position (design
-/// §11: the Cursor prompt, distinct from the Begin/End marker prompts).
+/// §11: the Cursor prompt). Same `+`/`-`/`++`/`--` meaning as
+/// [`parse_marker_pos`], just resolved to a plain offset instead of a
+/// [`PosSpec`] since the cursor has no typed-expression display to preserve.
 ///
 /// `+X`/`-X`: `X` seconds after/before `current`. `++X`/`--X`: `X` seconds
 /// after the start / before the end of the file (the same meaning `+`/`-`

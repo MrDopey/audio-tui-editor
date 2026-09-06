@@ -2,7 +2,7 @@
 
 use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, NO_FILE_OPEN};
 use crate::batch::RunMode;
-use crate::timespec::{parse_cursor_pos, Marker};
+use crate::timespec::{parse_cursor_pos, parse_marker_pos, Marker};
 
 impl App {
     pub(super) fn submit_prompt(&mut self, prompt: Prompt) {
@@ -56,13 +56,23 @@ impl App {
     /// prompt (`jump_marker_from_prompt`, below), which moves the cursor
     /// and is relative to it, not the file's start/end, and allows a
     /// transient crossing like any other drag.
+    /// `:b`/`:e`: set a marker from a typed expression, same grammar and the
+    /// same "relative to this marker's own position" meaning for `+`/`-` as
+    /// the `b`/`e` prompt (`jump_marker_from_prompt`) — unified so the two
+    /// entry paths don't silently disagree on what `+10s` means. Unlike the
+    /// prompt, this doesn't move playback: it only sets the marker in place.
     fn set_marker_from_expression(&mut self, kind: MarkerKind, input: &str) {
-        let Some(duration) = self.session.as_ref().map(super::Session::duration) else {
+        let Some((current, duration)) = self
+            .session
+            .as_ref()
+            .map(|s| (s.marker(kind).seconds(), s.duration()))
+        else {
             self.warn(NO_FILE_OPEN);
             return;
         };
-        match Marker::parse(input, duration) {
-            Ok(marker) => {
+        match parse_marker_pos(input, current) {
+            Ok(spec) => {
+                let marker = Marker::from_spec(spec, input.trim().to_string(), duration);
                 let shown = if let Some(session) = &mut self.session {
                     session.set_marker(kind, marker);
                     session.marker(kind).to_string()
@@ -71,7 +81,7 @@ impl App {
                 };
                 self.info(format!("{} marker set to {shown}", kind.label()));
             }
-            Err(err) => self.warn(format!("{err}. Try 10:00, +10s, -1m or 50%.")),
+            Err(err) => self.warn(format!("{err}. Try 10:00, +10s, ++10s, --10s or 50%.")),
         }
     }
 

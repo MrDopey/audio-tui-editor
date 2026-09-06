@@ -3,14 +3,34 @@
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
-    fn relative_expressions_set_markers_from_the_file_start_and_end() {
+    fn command_line_single_prefix_is_relative_to_the_markers_own_position() {
+        // Same "+/- relative to this marker's own position" meaning as the
+        // b/e prompt (`jump_marker_from_prompt`), not the file's start/end —
+        // move begin away from 0 first so the two would disagree if `:b`
+        // still meant "from the file start".
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('e'));
 
-        app.run_command("b +10s");
-        app.run_command("e -10s");
+        app.run_command("b 100"); // begin -> 100s (absolute)
+        app.run_command("b +10s"); // +10s from begin's own 100s, not from 0
+        app.run_command("e -10s"); // -10s from end's own 600s (its default)
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.begin.seconds(), 110.0);
+        assert_eq!(session.end.seconds(), 590.0);
+    }
+
+    #[test]
+    fn command_line_double_prefix_is_relative_to_the_file_start_and_end() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+
+        app.run_command("b 100"); // begin -> 100s, away from the file start
+        app.run_command("b ++10s"); // ++10s is always from the file start
+        app.run_command("e --10s"); // --10s is always from the file end
         let session = app.session.as_ref().unwrap();
         assert_eq!(session.begin.seconds(), 10.0);
         assert_eq!(session.end.seconds(), 590.0);
