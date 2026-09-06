@@ -45,9 +45,6 @@ pub struct Session {
     pub markers_dirty: bool,
     pub fields: Vec<MetaField>,
     pub field_index: usize,
-    /// `false`: only the preconfigured `METADATA_FIELDS` are reachable.
-    /// `true` (toggled by `a`): every tag the file carries is, too.
-    pub show_all_fields: bool,
     /// Whether automatic markers have been requested for this session.
     auto_requested: bool,
     /// Set by an explicit recalculation request: the next suggestion should
@@ -74,7 +71,6 @@ impl Session {
             markers_dirty: false,
             fields,
             field_index: 0,
-            show_all_fields: false,
             auto_requested: false,
             override_next_suggestion: false,
         };
@@ -252,25 +248,6 @@ impl Session {
         std::mem::swap(&mut self.begin, &mut self.end);
         self.active = self.active.toggled();
         true
-    }
-
-    /// How many of `fields` field navigation can currently reach: just the
-    /// preconfigured set, or everything, once `show_all_fields` is set.
-    pub fn visible_field_count(&self) -> usize {
-        if self.show_all_fields {
-            self.fields.len()
-        } else {
-            METADATA_FIELDS.len().min(self.fields.len())
-        }
-    }
-
-    /// `a`: reveal every tag the file actually carries, not just the
-    /// preconfigured set, or hide them again. Clamps `field_index` back
-    /// onto the (possibly now shorter) visible range.
-    pub(super) fn toggle_all_fields(&mut self) {
-        self.show_all_fields = !self.show_all_fields;
-        let last = self.visible_field_count().saturating_sub(1);
-        self.field_index = self.field_index.min(last);
     }
 }
 

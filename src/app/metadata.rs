@@ -11,7 +11,7 @@ impl App {
             return;
         };
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        let last = session.visible_field_count().saturating_sub(1);
+        let last = session.fields.len().saturating_sub(1);
 
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => self.mode = Mode::Play,
@@ -35,17 +35,6 @@ impl App {
             KeyCode::Char('G') => {
                 if let Some(session) = &mut self.session {
                     session.field_index = last;
-                }
-            }
-            KeyCode::Char('a') => {
-                if let Some(session) = &mut self.session {
-                    session.toggle_all_fields();
-                    let showing_all = session.show_all_fields;
-                    self.info(if showing_all {
-                        "Showing all metadata fields."
-                    } else {
-                        "Showing standard metadata fields."
-                    });
                 }
             }
             KeyCode::Char('/') => {
@@ -88,7 +77,7 @@ impl App {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let count = session.visible_field_count();
+        let count = session.fields.len();
         if count == 0 {
             return;
         }
@@ -115,7 +104,7 @@ impl App {
             let Some(session) = self.session.as_mut() else {
                 return;
             };
-            let count = session.visible_field_count();
+            let count = session.fields.len();
             if count == 0 {
                 return;
             }
@@ -163,7 +152,6 @@ fn field_matches(field: &super::MetaField, needle: &str) -> bool {
 mod tests {
     use super::super::tests::{app, press, press_ctrl, type_text};
     use crate::app::{Mode, Overlay};
-    use crate::media::probe::METADATA_FIELDS;
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
@@ -194,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reveals_extra_tags_after_the_preconfigured_set_sorted_alphabetically() {
+    fn all_tags_are_shown_after_the_preconfigured_set_sorted_alphabetically() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         app.files[0]
@@ -205,44 +193,14 @@ mod tests {
         press(&mut app, KeyCode::Char('m'));
 
         let session = app.session.as_ref().unwrap();
-        assert!(!session.show_all_fields);
-        assert_eq!(session.visible_field_count(), METADATA_FIELDS.len());
-        assert_eq!(session.fields.len(), METADATA_FIELDS.len() + 2);
-
-        press(&mut app, KeyCode::Char('a'));
-        let session = app.session.as_ref().unwrap();
-        assert!(session.show_all_fields);
-        assert_eq!(session.visible_field_count(), METADATA_FIELDS.len() + 2);
-        assert_eq!(session.fields[METADATA_FIELDS.len()].key, "bpm");
-        assert_eq!(session.fields[METADATA_FIELDS.len() + 1].key, "encoder");
-        assert_eq!(session.fields[METADATA_FIELDS.len() + 1].label, "Encoder");
-
-        press(&mut app, KeyCode::Char('a'));
-        assert!(!app.session.as_ref().unwrap().show_all_fields);
-    }
-
-    #[test]
-    fn g_is_clamped_to_the_shorter_visible_range_after_toggling_all_fields_off() {
-        let mut app = app(&[("a.opus", 60.0)]);
-        app.overlay = Overlay::None;
-        app.files[0]
-            .tags
-            .insert("encoder".to_string(), "libopus".to_string());
-        press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Char('m'));
-        press(&mut app, KeyCode::Char('a')); // show all
-        press(&mut app, KeyCode::Char('G')); // jump to the extra field
         assert_eq!(
-            app.session.as_ref().unwrap().field_index,
-            METADATA_FIELDS.len()
+            session.fields.len(),
+            crate::media::probe::METADATA_FIELDS.len() + 2
         );
-
-        press(&mut app, KeyCode::Char('a')); // hide extras again
-        assert_eq!(
-            app.session.as_ref().unwrap().field_index,
-            METADATA_FIELDS.len() - 1,
-            "field_index must be clamped back onto the shorter visible range"
-        );
+        let base = crate::media::probe::METADATA_FIELDS.len();
+        assert_eq!(session.fields[base].key, "bpm");
+        assert_eq!(session.fields[base + 1].key, "encoder");
+        assert_eq!(session.fields[base + 1].label, "Encoder");
     }
 
     #[test]

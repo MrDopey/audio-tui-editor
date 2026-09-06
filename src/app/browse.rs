@@ -124,7 +124,7 @@ impl App {
         };
         if self.mode == Mode::Metadata {
             if let Some(session) = &mut self.session {
-                let last = session.visible_field_count().saturating_sub(1);
+                let last = session.fields.len().saturating_sub(1);
                 session.field_index = origin.min(last);
             }
             return;

@@ -602,10 +602,9 @@ Navigation should use Vim-style movement.
 Suggested controls:
 
 ```text
-j/k             next/previous field
-a               toggle showing every tag the file carries, not just the
-                preconfigured fields — preconfigured fields keep their
-                existing order, followed by any extra tags, alphabetically
+j/k             next/previous field — every tag the file carries: the
+                preconfigured fields (in their existing order), followed
+                by any extra tags, alphabetically
 / n N           search fields, next match, previous match (as BROWSE)
 Enter or i      edit field
 Esc             finish editing
