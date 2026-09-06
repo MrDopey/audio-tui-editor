@@ -81,7 +81,7 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
-    fn q_behaves_like_esc_in_play_edit_and_metadata_modes() {
+    fn q_in_edit_mode_behaves_like_esc() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter); // PLAY
@@ -89,12 +89,24 @@ mod tests {
         assert_eq!(app.mode, Mode::Edit);
         press(&mut app, KeyCode::Char('q'));
         assert_eq!(app.mode, Mode::Play, "q in EDIT should behave like Esc");
+    }
 
+    #[test]
+    fn q_in_metadata_mode_behaves_like_esc() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
         press(&mut app, KeyCode::Char('m'));
         assert_eq!(app.mode, Mode::Metadata);
         press(&mut app, KeyCode::Char('q'));
         assert_eq!(app.mode, Mode::Play, "q in METADATA should behave like Esc");
+    }
 
+    #[test]
+    fn q_in_play_mode_closes_the_file_like_esc() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
         press(&mut app, KeyCode::Char('q'));
         assert_eq!(
             app.mode,
