@@ -10,6 +10,7 @@
 
 mod command;
 mod metadata;
+mod outcome;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,7 @@ use anyhow::{bail, Context, Result};
 use super::probe::{probe, MediaInfo};
 
 pub use metadata::{compare_metadata, CoverArt, MetadataReport};
+pub use outcome::SaveOutcome;
 
 /// Trim boundaries closer together than this are treated as identical.
 const TIME_EPSILON: f64 = 0.02;
@@ -55,70 +57,6 @@ impl SaveRequest {
             end,
             metadata: BTreeMap::new(),
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SaveOutcome {
-    pub path: PathBuf,
-    /// Nothing needed doing; the file was not rewritten (design §16).
-    pub noop: bool,
-    pub source_duration: f64,
-    pub output_duration: f64,
-    pub removed_beginning: f64,
-    pub removed_ending: f64,
-    pub processing: Processing,
-    pub metadata: MetadataReport,
-}
-
-impl SaveOutcome {
-    /// The save summary shown after every save (design §16).
-    pub fn summary_lines(&self) -> Vec<String> {
-        use crate::timespec::format_timestamp_millis as ts;
-
-        let name = self
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| self.path.display().to_string());
-
-        let mut lines = vec![format!("Saved: {name}"), String::new()];
-
-        if self.noop {
-            lines.push("No changes were required.".to_string());
-            lines.push(String::new());
-            lines.push("Duration:".to_string());
-            lines.push(format!(
-                "  {} → {}",
-                ts(self.source_duration),
-                ts(self.output_duration)
-            ));
-            lines.push(String::new());
-            lines.push("Status:".to_string());
-            lines.push("  NO-OP".to_string());
-            return lines;
-        }
-
-        lines.push("Duration:".to_string());
-        lines.push(format!(
-            "  {} → {}",
-            ts(self.source_duration),
-            ts(self.output_duration)
-        ));
-        lines.push(String::new());
-        lines.push("Removed:".to_string());
-        lines.push(format!("  beginning: {:.3}s", self.removed_beginning));
-        lines.push(format!("  ending:    {:.3}s", self.removed_ending));
-        lines.push(String::new());
-        lines.push("Processing:".to_string());
-        lines.push(format!("  {}", self.processing));
-        lines.push(String::new());
-        lines.push("Metadata:".to_string());
-        lines.push(format!("  {}", self.metadata.summary_line()));
-        lines.push(String::new());
-        lines.push("Status:".to_string());
-        lines.push("  SUCCESS".to_string());
-        lines
     }
 }
 
@@ -336,127 +274,4 @@ fn should_retry_for_cleaner_metadata(metadata: &MetadataReport, is_last_resort: 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn temp_file_sits_beside_the_source_and_keeps_the_extension() {
-        let temp = TempFile::beside(Path::new("/music/interview 1.opus")).unwrap();
-        assert_eq!(temp.path.parent().unwrap(), Path::new("/music"));
-        assert_eq!(temp.path.extension().unwrap(), "opus");
-        assert!(temp
-            .path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with('.'));
-    }
-
-    #[test]
-    fn temp_file_is_removed_unless_committed() {
-        let dir = std::env::temp_dir().join(format!("audioedit-tmp-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let source = dir.join("x.wav");
-        let temp = TempFile::beside(&source).unwrap();
-        std::fs::write(&temp.path, b"partial").unwrap();
-        let path = temp.path.clone();
-        drop(temp);
-        assert!(
-            !path.exists(),
-            "an abandoned temporary file must be cleaned up"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn processing_labels_match_the_spec() {
-        assert_eq!(Processing::StreamCopy.to_string(), "stream copy");
-        assert_eq!(Processing::Reencode.to_string(), "re-encoding");
-    }
-
-    #[test]
-    fn a_lossy_result_is_retried_while_a_better_attempt_remains() {
-        let lossy = MetadataReport {
-            cover_art: CoverArt::Lost,
-            ..MetadataReport::default()
-        };
-        assert!(
-            should_retry_for_cleaner_metadata(&lossy, false),
-            "a stream-copy-audio-only result must not win over an untried \
-             reencode-all-streams attempt just because it came first"
-        );
-    }
-
-    #[test]
-    fn a_lossy_result_is_accepted_once_nothing_else_remains() {
-        let lossy = MetadataReport {
-            cover_art: CoverArt::Lost,
-            ..MetadataReport::default()
-        };
-        assert!(!should_retry_for_cleaner_metadata(&lossy, true));
-    }
-
-    #[test]
-    fn a_clean_result_is_never_retried() {
-        assert!(!should_retry_for_cleaner_metadata(
-            &MetadataReport::default(),
-            false
-        ));
-    }
-}
-
-#[cfg(test)]
-mod summary_tests {
-    use super::*;
-
-    fn outcome(noop: bool) -> SaveOutcome {
-        SaveOutcome {
-            path: PathBuf::from("/rec/interview.opus"),
-            noop,
-            source_duration: 6151.2,
-            output_duration: if noop { 6151.2 } else { 6128.2 },
-            removed_beginning: if noop { 0.0 } else { 12.0 },
-            removed_ending: if noop { 0.0 } else { 11.0 },
-            processing: Processing::StreamCopy,
-            metadata: MetadataReport::default(),
-        }
-    }
-
-    #[test]
-    fn success_summary_matches_the_documented_shape() {
-        let lines = outcome(false).summary_lines();
-        assert_eq!(lines[0], "Saved: interview.opus");
-        assert!(lines.contains(&"  01:42:31.200 → 01:42:08.200".to_string()));
-        assert!(lines.contains(&"  beginning: 12.000s".to_string()));
-        assert!(lines.contains(&"  ending:    11.000s".to_string()));
-        assert!(lines.contains(&"  stream copy".to_string()));
-        assert!(lines.contains(&"  preserved".to_string()));
-        assert!(lines.contains(&"  SUCCESS".to_string()));
-    }
-
-    #[test]
-    fn noop_summary_is_reported_explicitly() {
-        let lines = outcome(true).summary_lines();
-        assert!(lines.contains(&"No changes were required.".to_string()));
-        assert!(lines.contains(&"  NO-OP".to_string()));
-        assert!(!lines.iter().any(|l| l.contains("Removed")));
-        assert!(!lines.iter().any(|l| l.contains("SUCCESS")));
-    }
-
-    #[test]
-    fn reencoding_is_named_in_the_summary() {
-        let mut o = outcome(false);
-        o.processing = Processing::Reencode;
-        assert!(o.summary_lines().contains(&"  re-encoding".to_string()));
-    }
-
-    #[test]
-    fn metadata_loss_is_visible_in_the_summary() {
-        let mut o = outcome(false);
-        o.metadata.lost.push("Comment".to_string());
-        let lines = o.summary_lines();
-        assert!(lines
-            .iter()
-            .any(|l| l.contains("partially preserved") && l.contains("Comment")));
-    }
-}
+mod tests;
