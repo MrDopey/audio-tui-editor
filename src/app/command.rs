@@ -70,16 +70,19 @@ impl App {
         }
     }
 
-    /// `b`/`e`/`i`: type a jump for a marker. Moves the cursor there (same
-    /// grammar as the `c` cursor-jump prompt: `+`/`-` relative to the
-    /// cursor's current position, `++`/`--` from the start/end) and makes
-    /// `kind` the active, hugging marker — possibly crossing the other
-    /// marker transiently, same as dragging with Left/Right.
+    /// `b`/`e`/`i`: type a jump for a marker, same grammar as the `c`
+    /// cursor-jump prompt (`++`/`--` from the start/end) except `+`/`-` are
+    /// relative to *this marker's own* current position, not the cursor's —
+    /// typing `+10` for `b` means 10s after wherever Begin already is, even
+    /// if the cursor (playback) is somewhere else entirely. Moves the
+    /// cursor to the result and makes `kind` the active, hugging marker —
+    /// possibly crossing the other marker transiently, same as dragging
+    /// with Left/Right.
     fn jump_marker_from_prompt(&mut self, kind: MarkerKind, input: &str) {
         let Some((current, duration)) = self
             .session
             .as_ref()
-            .map(|s| (s.player.position(), s.duration()))
+            .map(|s| (s.marker(kind).seconds(), s.duration()))
         else {
             self.warn("No file is open.");
             return;

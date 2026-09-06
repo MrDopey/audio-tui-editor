@@ -156,6 +156,10 @@ impl App {
             session.end = Marker::absolute(duration, duration);
             session.active = MarkerKind::Begin;
             session.markers_dirty = true;
+            // Same reason as `Session::adopt_suggestion`: reset the cursor
+            // to match, so the next Left/Right drags Begin from 0 rather
+            // than yanking it to wherever playback happened to be.
+            session.player.seek_to(0.0);
         }
         self.info("Markers reset to the whole file.");
     }

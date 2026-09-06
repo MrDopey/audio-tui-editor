@@ -165,6 +165,12 @@ impl Session {
         self.begin = Marker::absolute(suggestion.begin, duration);
         self.end = Marker::absolute(suggestion.end, duration);
         self.markers_dirty = false;
+        // The cursor (playback position) doesn't move on its own here, but
+        // the active marker still hugs it — left stale, the next Left/Right
+        // would yank the freshly detected marker straight back to wherever
+        // playback happened to be. Reset it to match instead.
+        let target = self.marker(self.active).seconds();
+        self.player.seek_to(target);
     }
 
     pub(super) fn marker(&self, kind: MarkerKind) -> &Marker {
@@ -329,6 +335,34 @@ mod tests {
     }
 
     #[test]
+    fn b_and_e_relative_jumps_are_relative_to_their_own_marker_not_the_cursor() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e')); // EDIT, Begin at 0, End at 600
+
+        // Leave the cursor somewhere unrelated to either marker.
+        app.session.as_mut().unwrap().player.seek_to(300.0);
+
+        // `+10` for `b` means 10s after Begin's own position (0), not
+        // 10s after the cursor (300).
+        press(&mut app, KeyCode::Char('b'));
+        type_text(&mut app, "+10");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 10.0);
+
+        // Move the cursor away again before jumping End.
+        app.session.as_mut().unwrap().player.seek_to(50.0);
+
+        // `-10` for `e` means 10s before End's own position (600), not
+        // 10s before the cursor (50).
+        press(&mut app, KeyCode::Char('e'));
+        type_text(&mut app, "-10");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.session.as_ref().unwrap().end.seconds(), 590.0);
+    }
+
+    #[test]
     fn crossing_the_other_marker_is_transient_until_settled() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
@@ -489,6 +523,50 @@ mod tests {
         });
         assert_eq!(session.begin.seconds(), 12.0);
         assert_eq!(session.end.seconds(), 500.0);
+    }
+
+    #[test]
+    fn adopting_a_suggestion_resets_the_cursor_so_dragging_continues_from_it() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+
+        // Leave the cursor somewhere unrelated to the coming suggestion.
+        app.session.as_mut().unwrap().player.seek_to(300.0);
+
+        let session = app.session.as_mut().unwrap();
+        session.adopt_suggestion(TrimSuggestion {
+            begin: 12.0,
+            end: 500.0,
+            begin_detected: true,
+            end_detected: true,
+        });
+        assert!(
+            (session.player.position() - 12.0).abs() < 0.01,
+            "cursor should follow the active (Begin) marker to its new position"
+        );
+
+        // Left/Right now drags Begin from 12, not from the stale 300.
+        press(&mut app, KeyCode::Char('l'));
+        assert!((app.session.as_ref().unwrap().begin.seconds() - 13.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn resetting_markers_resets_the_cursor_too() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        app.session.as_mut().unwrap().player.seek_to(300.0);
+
+        press(&mut app, KeyCode::Char('r'));
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.begin.seconds(), 0.0);
+        assert!((session.player.position() - 0.0).abs() < 0.01);
+
+        press(&mut app, KeyCode::Char('l'));
+        assert!((app.session.as_ref().unwrap().begin.seconds() - 1.0).abs() < 0.01);
     }
 
     #[test]
