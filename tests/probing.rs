@@ -36,12 +36,12 @@ fn scanning_finds_audio_in_every_supported_format_and_skips_the_rest() {
 }
 
 #[test]
-fn a_file_that_is_not_media_is_reported_as_such() {
+fn unreadable_bytes_are_reported_as_an_error_not_a_panic() {
+    // ffprobe exits non-zero on garbage input, so this is always an `Err`
+    // (as opposed to a readable-but-audioless file, which is `Ok(None)`).
     let ws = Workspace::new("notmedia");
     let path = ws.path().join("broken.opus");
     std::fs::write(&path, b"this is definitely not an ogg stream").unwrap();
-    // Either an error or "no audio stream" is acceptable; a panic is not.
-    if let Ok(result) = probe::probe(&path) {
-        assert!(result.is_none());
-    }
+    let err = probe::probe(&path).expect_err("garbage bytes are not a valid media file");
+    assert!(format!("{err:#}").contains("ffprobe failed"));
 }
