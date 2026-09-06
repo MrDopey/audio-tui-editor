@@ -252,15 +252,19 @@ leading/trailing silence.
 | `r` | reset to the whole file |
 | `p` | play from the active marker |
 
-Positions can be relative to either end, so you never have to work out an
-absolute timestamp. For a ten-minute file `:b +10s` is `00:10` and `:e -10s` is
-`09:50`, and the expression stays on screen next to the timestamp it resolves to.
+Positions can be relative, so you never have to work out an absolute
+timestamp — `+10s`/`-10s` nudge a marker further from wherever it already
+sits (typed on the command line as `:b +10s` or into the `b`/`e`/`i` prompt,
+both mean the same thing); `++10s`/`--10s` jump from the file's start/end
+instead. The expression stays on screen next to the timestamp it resolves to.
 
 ```
-+10s    10 seconds after the start
--10s    10 seconds before the end
-+1m     one minute in
-50%     halfway
++10s    10 seconds further from this marker's own position
+-10s    10 seconds back from this marker's own position
+++10s   10 seconds after the start
+--10s   10 seconds before the end
++1m     one minute further
+50%     halfway through the file
 10:00   an absolute timestamp
 ```
 
