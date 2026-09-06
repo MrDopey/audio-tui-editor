@@ -35,6 +35,7 @@ pub(super) fn run_attempt(
     span: f64,
     edits: &BTreeMap<String, Option<String>>,
     attempt: Attempt,
+    cover_art_tag: Option<&str>,
 ) -> Result<()> {
     let mut command = Command::new(ffmpeg_bin());
     command.args(["-y", "-v", "error", "-nostdin"]);
@@ -44,7 +45,13 @@ pub(super) fn run_attempt(
     command.arg("-t").arg(format!("{span:.6}"));
     command.arg("-i").arg(&info.path);
 
-    if attempt.all_streams {
+    // Ogg's muxer cannot write a video stream under any circumstances, so
+    // mapping the cover-art stream into an Ogg/Opus/Vorbis output always
+    // fails outright. When that's the case it is re-attached as a
+    // `METADATA_BLOCK_PICTURE` tag instead (see `cover_art_tag`), so the
+    // video stream must never be mapped here.
+    let maps_video = attempt.all_streams && !(is_ogg_container(info) && info.has_cover_art);
+    if maps_video {
         command.args(["-map", "0"]);
     } else {
         command.args(["-map", "0:a:0"]);
@@ -59,7 +66,7 @@ pub(super) fn run_attempt(
                 command.arg(arg);
             }
             // Cover art is a still image; never re-encode it.
-            if attempt.all_streams && info.has_cover_art {
+            if maps_video {
                 command.args(["-c:v", "copy"]);
             }
         }
@@ -72,6 +79,12 @@ pub(super) fn run_attempt(
         command.arg(format!("-metadata{scope}"));
         // An empty value is how ffmpeg is told to drop a tag.
         command.arg(format!("{key}={}", value.as_deref().unwrap_or("")));
+    }
+    if !maps_video {
+        if let Some(picture) = cover_art_tag {
+            command.arg(format!("-metadata{scope}"));
+            command.arg(format!("metadata_block_picture={picture}"));
+        }
     }
 
     command.arg(output);
@@ -94,6 +107,14 @@ pub(super) fn run_attempt(
     Ok(())
 }
 
+/// Whether ffprobe reports `info` as living in an Ogg container (opus,
+/// vorbis, …). Ogg's muxer cannot write a video stream, which is why its
+/// cover art has to travel as a `METADATA_BLOCK_PICTURE` tag instead of a
+/// mapped stream — see [`run_attempt`] and [`super::cover_art`].
+pub(super) fn is_ogg_container(info: &MediaInfo) -> bool {
+    info.format_name.split(',').any(|name| name.trim() == "ogg")
+}
+
 /// The ffmpeg option suffix that targets where a container keeps its tags.
 ///
 /// Ogg-family formats (opus, vorbis) carry Vorbis comments on the stream, and
@@ -101,11 +122,10 @@ pub(super) fn run_attempt(
 /// edits are applied, so a global `-metadata` is silently ignored. Everything
 /// else keeps tags at the container level.
 pub(super) fn metadata_scope(info: &MediaInfo) -> &'static str {
-    let ogg_container = info.format_name.split(',').any(|name| name.trim() == "ogg");
     let tags_on_stream = METADATA_FIELDS
         .iter()
         .any(|(key, _)| info.stream_tags.contains_key(*key));
-    if ogg_container || tags_on_stream {
+    if is_ogg_container(info) || tags_on_stream {
         ":s:a:0"
     } else {
         ""

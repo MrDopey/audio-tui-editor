@@ -330,3 +330,100 @@ fn cover_art_survives_a_plain_in_bounds_trim() {
     assert!(saved.has_cover_art, "cover art was falsely reported kept");
     assert!(temp_files(ws.path()).is_empty());
 }
+
+#[test]
+fn cover_art_on_an_opus_file_survives_a_trim() {
+    // Ogg's muxer cannot write a video stream at all, so cover art here has
+    // to be attached the way real tagging tools do it: as a
+    // `METADATA_BLOCK_PICTURE` Vorbis comment, not a mapped stream. This
+    // builds the fixture the same way, then checks the save pipeline
+    // preserves it across a trim rather than silently dropping it.
+    let ws = Workspace::new("cover_opus");
+    let cover = ws.path().join("cover.png");
+    let ok = Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=32x32:d=1",
+            "-frames:v",
+            "1",
+        ])
+        .arg(&cover)
+        .status()
+        .expect("running ffmpeg")
+        .success();
+    assert!(ok, "could not build a cover image");
+
+    let audio = ws.make("plain.opus", &["-c:a", "libopus", "-b:a", "64k"]);
+    let with_cover = ws.path().join("withcover.opus");
+    let picture = base64_encode(&metadata_block_picture(
+        "image/png",
+        &std::fs::read(&cover).unwrap(),
+    ));
+    let ok = Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(&audio)
+        .args(["-map", "0:a", "-c", "copy", "-metadata:s:a:0"])
+        .arg(format!("metadata_block_picture={picture}"))
+        .arg(&with_cover)
+        .status()
+        .expect("running ffmpeg")
+        .success();
+    assert!(ok, "could not attach cover art to the opus fixture");
+
+    let info = probe_ok(&with_cover);
+    assert!(info.has_cover_art, "the fixture should carry cover art");
+
+    let outcome = ffmpeg::save(&info, &SaveRequest::trim(0.1, 0.6)).expect("saving");
+    let saved = probe_ok(&with_cover);
+
+    assert_eq!(
+        outcome.metadata.cover_art,
+        CoverArt::Preserved,
+        "expected cover art to survive a trim of an opus file"
+    );
+    assert!(saved.has_cover_art, "cover art was falsely reported kept");
+    assert!(temp_files(ws.path()).is_empty());
+}
+
+/// FLAC-style `METADATA_BLOCK_PICTURE` block (type 3 = front cover), built
+/// independently of `audioedit::media::ffmpeg::cover_art` so this fixture
+/// doesn't just exercise the same code it's meant to be testing against.
+fn metadata_block_picture(mime: &str, data: &[u8]) -> Vec<u8> {
+    let mut block = Vec::with_capacity(32 + mime.len() + data.len());
+    block.extend_from_slice(&3u32.to_be_bytes());
+    block.extend_from_slice(&(mime.len() as u32).to_be_bytes());
+    block.extend_from_slice(mime.as_bytes());
+    block.extend_from_slice(&[0u8; 20]); // desc len, width, height, depth, colors
+    block.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    block.extend_from_slice(data);
+    block
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        let n = (b0 as u32) << 16 | (b1 as u32) << 8 | b2 as u32;
+        out.push(ALPHABET[(n >> 18 & 0x3F) as usize] as char);
+        out.push(ALPHABET[(n >> 12 & 0x3F) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(n >> 6 & 0x3F) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[(n & 0x3F) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}

@@ -9,6 +9,7 @@
 //! survived a save against what was there before.
 
 mod command;
+mod cover_art;
 mod metadata;
 mod outcome;
 
@@ -165,6 +166,15 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
     let temp = TempFile::beside(&info.path)?;
     let span = end - begin;
 
+    // Ogg can never mux a video stream, so cover art on an Ogg/Opus/Vorbis
+    // file has to travel as a tag instead of a mapped stream. Extracted once
+    // up front since the source doesn't change across attempts.
+    let cover_art_tag = if command::is_ogg_container(info) && info.has_cover_art {
+        cover_art::extract_metadata_block_picture(&info.path)
+    } else {
+        None
+    };
+
     // Prefer lossless stream copy; only re-encode when copying cannot deliver.
     let mut attempts = vec![Attempt {
         processing: Processing::StreamCopy,
@@ -191,7 +201,15 @@ pub fn save(info: &MediaInfo, request: &SaveRequest) -> Result<SaveOutcome> {
     let attempt_count = attempts.len();
     for (index, attempt) in attempts.into_iter().enumerate() {
         let _ = std::fs::remove_file(&temp.path);
-        match command::run_attempt(info, &temp.path, begin, span, &edits, attempt) {
+        match command::run_attempt(
+            info,
+            &temp.path,
+            begin,
+            span,
+            &edits,
+            attempt,
+            cover_art_tag.as_deref(),
+        ) {
             Ok(()) => {}
             Err(err) => {
                 failures.push(format!("{}: {err}", command::describe(attempt)));
