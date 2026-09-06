@@ -146,6 +146,7 @@ impl<T> Analysis<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusMessage {
     pub text: String,
     pub is_error: bool,
