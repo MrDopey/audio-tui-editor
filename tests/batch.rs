@@ -48,8 +48,8 @@ fn a_dry_run_reports_changes_without_touching_any_file() {
 }
 
 #[test]
-fn an_applied_run_trims_each_file_independently_and_reports_noops() {
-    let ws = Workspace::new("apply");
+fn parallel_runs_still_report_progress_in_input_order() {
+    let ws = Workspace::new("apply-order");
     ws.make("a.flac", &["-c:a", "flac"]);
     ws.make("b.opus", &["-c:a", "libopus", "-b:a", "64k"]);
     ws.make_continuous("c.opus");
@@ -80,6 +80,17 @@ fn an_applied_run_trims_each_file_independently_and_reports_noops() {
     assert_eq!(report.changed(), 2);
     assert_eq!(report.noop(), 1);
     assert_eq!(report.failed(), 0);
+}
+
+#[test]
+fn an_applied_run_trims_each_file_to_the_expected_duration() {
+    let ws = Workspace::new("apply-durations");
+    ws.make("a.flac", &["-c:a", "flac"]);
+    ws.make("b.opus", &["-c:a", "libopus", "-b:a", "64k"]);
+    ws.make_continuous("c.opus");
+
+    let files = probe::scan_folder(ws.path()).expect("scanning");
+    batch::run(&files, &[], &Config::default(), RunMode::Apply, 4, |_| {});
 
     for file in probe::scan_folder(ws.path()).expect("rescanning") {
         let expected = if file.file_name() == "c.opus" {
