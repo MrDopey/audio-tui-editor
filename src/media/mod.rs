@@ -46,10 +46,12 @@ pub fn backend_command(bin: &str) -> Command {
 /// long-running process).
 ///
 /// Distinguishes a binary that genuinely isn't on PATH (`NotFound`) from one
-/// that exists but could not be executed for some other reason — wrong
-/// permissions, a sandboxed/restricted exec policy, a resource limit.
-/// Blaming PATH for both sends someone chasing PATH when the real problem,
-/// as reported by the OS, is something else entirely.
+/// that exists but could not be executed for some other reason. Blaming PATH
+/// for both sends someone chasing PATH when the real problem is something
+/// else — so anything other than `NotFound` just reports what the OS
+/// actually said, rather than guessing why, while still naming the one
+/// thing the user can actually do about it either way: point at a
+/// different binary.
 pub fn spawn_error_hint(bin: &str, err: &std::io::Error) -> String {
     if err.kind() == std::io::ErrorKind::NotFound {
         format!(
@@ -58,9 +60,8 @@ pub fn spawn_error_hint(bin: &str, err: &std::io::Error) -> String {
         )
     } else {
         format!(
-            "`{bin}` is on PATH but could not be run: {err}. This is usually a \
-             permissions problem, or something sandboxing or restricting which \
-             binaries this process may execute — not a missing-PATH issue"
+            "`{bin}` could not be run: {err} \
+             (set AUDIOEDIT_FFMPEG / AUDIOEDIT_FFPROBE to use a different binary)"
         )
     }
 }
@@ -183,9 +184,10 @@ mod tests {
         let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
         let hint = spawn_error_hint("ffmpeg", &denied);
         assert!(
-            hint.contains("not a missing-PATH issue"),
+            !hint.contains("PATH"),
             "a binary that exists but can't be run isn't a PATH problem"
         );
-        assert!(hint.contains("permission"));
+        // Reports the OS's own message rather than guessing why.
+        assert!(hint.contains(&denied.to_string()));
     }
 }
