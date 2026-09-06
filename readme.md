@@ -184,7 +184,7 @@ stateDiagram-v2
     BROWSE --> PLAY: Enter — open the file
     PLAY --> BROWSE: Esc / q / :q — close the file
 
-    PLAY --> EDIT: e — auto-set markers
+    PLAY --> EDIT: e
     EDIT --> PLAY: Esc / q
 
     PLAY --> METADATA: m
@@ -236,16 +236,18 @@ playback cursor in real time.
 ### EDIT
 
 Two markers define what is *kept*: everything between `beginning` and `ending`.
-On entering EDIT they are set automatically, moving past leading silence and
-stopping before trailing silence.
+They start out spanning the whole file; press `a` to detect and jump past
+leading/trailing silence.
 
 | Key | Action |
 | --- | --- |
 | `←` `→` `h` `l` | move the active marker by the fine step (default 1 s) |
 | `Ctrl-←` `Ctrl-→` `Ctrl-h` `Ctrl-l` | move it by the large step (default 10 s) |
 | `Tab` | switch between the beginning and ending marker |
-| `b` / `e` | set the beginning / ending marker at the playhead |
-| `B` / `E` / `i` | type a position |
+| `b` / `e` | type a position for the beginning / ending marker |
+| `i` | type a position for whichever marker is active |
+| `c` | type a position for the cursor |
+| `g` | seek to the active marker without playing |
 | `a` | recalculate the automatic markers |
 | `r` | reset to the whole file |
 | `p` | play from the active marker |
