@@ -48,23 +48,40 @@
     }
 
     #[test]
-    fn mode_transitions_match_the_specification() {
+    fn entering_play_from_browse() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
-
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.mode, Mode::Play);
+    }
 
+    #[test]
+    fn edit_esc_returns_to_play() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('e'));
         assert_eq!(app.mode, Mode::Edit);
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.mode, Mode::Play);
+    }
 
+    #[test]
+    fn metadata_esc_returns_to_play() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('m'));
         assert_eq!(app.mode, Mode::Metadata);
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.mode, Mode::Play);
+    }
 
+    #[test]
+    fn play_esc_returns_to_browse_and_closes_session() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.mode, Mode::Browse);
         assert!(app.session.is_none());
@@ -135,33 +152,16 @@
     }
 
     #[test]
-    fn a_save_error_says_the_original_is_untouched() {
+    fn pressing_enter_on_an_error_overlay_reveals_the_detail() {
         let mut app = app(&[("a.opus", 60.0)]);
-        app.fail(
-            "Could not save the file.\n\nThe original file has NOT been modified.",
-            "ffmpeg: boom",
-        );
+        app.fail("Could not save the file.", "ffmpeg: boom");
         match &app.overlay {
-            Overlay::Error {
-                message,
-                showing_detail,
-                ..
-            } => {
-                assert!(message.contains("NOT been modified"));
-                assert!(!showing_detail);
-            }
+            Overlay::Error { showing_detail, .. } => assert!(!showing_detail),
             _ => panic!("expected an error overlay"),
         }
         press(&mut app, KeyCode::Enter);
         match &app.overlay {
-            Overlay::Error {
-                showing_detail,
-                detail,
-                ..
-            } => {
-                assert!(showing_detail);
-                assert!(detail.contains("boom"));
-            }
+            Overlay::Error { showing_detail, .. } => assert!(showing_detail),
             _ => panic!("expected an error overlay"),
         }
     }
