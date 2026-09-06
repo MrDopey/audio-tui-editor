@@ -26,10 +26,11 @@ fn csv_field(value: &str) -> String {
 }
 
 /// How a headless run (`--dry-run` / `--apply-defaults`) is printed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum OutputFormat {
     /// Columns aligned; long names are trimmed to fit (the default).
+    #[default]
     Table,
     /// Columns aligned; names are never trimmed.
     TableFull,
@@ -39,12 +40,6 @@ pub enum OutputFormat {
     JsonFull,
     /// One CSV row per file, streamed as it completes.
     Csv,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Table
-    }
 }
 
 /// The before/after shape of a trim, broken out per side so a report can
