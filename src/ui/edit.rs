@@ -70,8 +70,10 @@ fn render_markers(frame: &mut Frame, session: &Session, area: Rect) {
         )
     } else if session.markers_dirty {
         Span::styled("markers edited", Style::default().fg(Color::Yellow))
-    } else {
+    } else if session.auto.ready().is_some() {
         Span::styled("automatic markers", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled("not yet analyzed — press a", Style::default().fg(Color::DarkGray))
     };
 
     let text = vec![
