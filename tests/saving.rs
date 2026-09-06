@@ -267,7 +267,7 @@ fn a_metadata_edit_that_matches_the_current_value_is_a_noop() {
 }
 
 #[test]
-fn cover_art_survives_a_trim_or_is_reported_as_lost() {
+fn cover_art_survives_a_plain_in_bounds_trim() {
     let ws = Workspace::new("cover");
     let cover = ws.path().join("cover.png");
     let ok = Command::new("ffmpeg")
@@ -319,11 +319,14 @@ fn cover_art_survives_a_trim_or_is_reported_as_lost() {
     let outcome = ffmpeg::save(&info, &SaveRequest::trim(2.0, 8.0)).expect("saving");
     let saved = probe_ok(&with_cover);
 
-    // Whatever happened, the report must match what is actually on disk.
-    match outcome.metadata.cover_art {
-        CoverArt::Preserved => assert!(saved.has_cover_art, "cover art was falsely reported kept"),
-        CoverArt::Lost => assert!(!saved.has_cover_art),
-        CoverArt::Absent => panic!("the source had cover art"),
-    }
+    // The trim is fully within bounds, so the first attempt (stream-copy,
+    // all streams) should succeed and keep the cover art.
+    assert_eq!(
+        outcome.metadata.cover_art,
+        CoverArt::Preserved,
+        "expected the cover art to survive a plain in-bounds trim"
+    );
+    // And the report must match what is actually on disk.
+    assert!(saved.has_cover_art, "cover art was falsely reported kept");
     assert!(temp_files(ws.path()).is_empty());
 }
