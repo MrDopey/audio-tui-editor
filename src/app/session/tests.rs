@@ -94,7 +94,7 @@
     }
 
     #[test]
-    fn crossing_the_other_marker_is_transient_until_settled() {
+    fn typed_jump_beyond_duration_clamps_without_crossing() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
@@ -108,6 +108,14 @@
         assert_eq!(session.begin.seconds(), 600.0);
         assert_eq!(session.end.seconds(), 600.0);
         assert!(!session.is_crossed(), "600 == 600 isn't a crossing");
+    }
+
+    #[test]
+    fn crossing_the_other_marker_is_transient_until_settled() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e')); // EDIT, Begin active, End at 600
 
         // Force a real crossing directly, then settle it: Begin/End swap
         // values (preserving the 200s range width) and `active` flips to
