@@ -393,8 +393,8 @@ large_step_seconds = 10
 [auto_trim]
 begin_threshold_db = -40
 end_threshold_db = -40
-begin_min_duration = 1
-end_min_duration = 1
+begin_min_duration = 3
+end_min_duration = 5
 ```
 
 ---
