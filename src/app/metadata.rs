@@ -2,6 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::search::{find_backward, find_forward, find_from};
 use super::{App, Mode, Prompt, PromptKind};
 
 impl App {
@@ -86,9 +87,7 @@ impl App {
             return;
         }
         let needle = needle.to_lowercase();
-        let found = (0..count)
-            .map(|offset| (origin + offset) % count)
-            .find(|&index| field_matches(&session.fields[index], &needle));
+        let found = find_from(origin, count, |i| field_matches(&session.fields[i], &needle));
         session.field_index = found.unwrap_or(origin.min(count - 1));
     }
 
@@ -109,15 +108,12 @@ impl App {
                 return;
             }
             let start = session.field_index;
-            let found = (1..=count)
-                .map(|offset| {
-                    if forward {
-                        (start + offset) % count
-                    } else {
-                        (start + count * count - offset) % count
-                    }
-                })
-                .find(|&index| field_matches(&session.fields[index], &needle));
+            let pred = |i: usize| field_matches(&session.fields[i], &needle);
+            let found = if forward {
+                find_forward(start, count, pred)
+            } else {
+                find_backward(start, count, pred)
+            };
             if let Some(index) = found {
                 session.field_index = index;
             }

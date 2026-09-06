@@ -17,6 +17,7 @@ mod overlay;
 mod play;
 mod prompt;
 mod save;
+mod search;
 mod session;
 
 use std::path::PathBuf;

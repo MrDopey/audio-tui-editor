@@ -2,6 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::search::{find_backward, find_forward, find_from};
 use super::{App, Mode, PendingNav, Prompt, PromptKind};
 
 impl App {
@@ -58,26 +59,20 @@ impl App {
         }
         let needle = self.last_search.to_lowercase();
         let count = self.files.len();
-        // Wrap around, starting from the entry after (or before) the cursor.
-        for offset in 1..=count {
-            let index = if forward {
-                (self.selected + offset) % count
-            } else {
-                (self.selected + count * count - offset) % count
-            };
-            if self.files[index]
-                .file_name()
-                .to_lowercase()
-                .contains(&needle)
-            {
-                self.selected = index;
-                let pattern = self.last_search.clone();
-                self.info(format!("/{pattern}"));
-                return;
-            }
-        }
+        let pred = |i: usize| self.files[i].file_name().to_lowercase().contains(&needle);
+        let found = if forward {
+            find_forward(self.selected, count, pred)
+        } else {
+            find_backward(self.selected, count, pred)
+        };
         let pattern = self.last_search.clone();
-        self.warn(format!("Pattern not found: {pattern}"));
+        match found {
+            Some(index) => {
+                self.selected = index;
+                self.info(format!("/{pattern}"));
+            }
+            None => self.warn(format!("Pattern not found: {pattern}")),
+        }
     }
 
     /// Live "as you type" preview for the `/` prompt: jump the selection to
@@ -102,18 +97,10 @@ impl App {
         }
         let needle = needle.to_lowercase();
         let count = self.files.len();
-        for offset in 0..count {
-            let index = (origin + offset) % count;
-            if self.files[index]
-                .file_name()
-                .to_lowercase()
-                .contains(&needle)
-            {
-                self.selected = index;
-                return;
-            }
-        }
-        self.selected = origin;
+        let found = find_from(origin, count, |i| {
+            self.files[i].file_name().to_lowercase().contains(&needle)
+        });
+        self.selected = found.unwrap_or(origin);
     }
 
     /// Cancel an in-progress `/` search, restoring the pre-search selection
