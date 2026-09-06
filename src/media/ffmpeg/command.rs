@@ -12,6 +12,13 @@ use super::super::probe::{MediaInfo, METADATA_FIELDS};
 use super::super::{ffmpeg_bin, missing_backend_hint, tail_of};
 use super::{Attempt, Processing};
 
+/// Stream copy snaps to packet boundaries, so output duration is allowed to
+/// drift from the requested span by this fraction of it...
+const DURATION_DRIFT_TOLERANCE_RATIO: f64 = 0.02;
+/// ...or by this many seconds, whichever is larger (so short clips still get
+/// a usable amount of slack).
+const MIN_DURATION_TOLERANCE_SECS: f64 = 0.5;
+
 pub(super) fn describe(attempt: Attempt) -> String {
     let streams = if attempt.all_streams {
         "all streams"
@@ -168,8 +175,8 @@ pub(super) fn validate_media(output: &MediaInfo, expected_span: f64) -> Result<(
     if output.duration <= 0.0 {
         bail!("output has no measurable duration");
     }
-    // Stream copy snaps to packet boundaries, so allow a little slack.
-    let tolerance = (expected_span * 0.02).max(0.5);
+    let tolerance =
+        (expected_span * DURATION_DRIFT_TOLERANCE_RATIO).max(MIN_DURATION_TOLERANCE_SECS);
     let drift = (output.duration - expected_span).abs();
     if drift > tolerance {
         bail!(
