@@ -15,8 +15,9 @@ RUN $(groupadd -g $GROUP_ID customgroup || true) && \
 #   libasound2-plugins  the ALSA -> PulseAudio bridge, so playback can leave the
 #                       container (see "On macOS (Apple Silicon)" in the README)
 #   pulseaudio-utils    pactl/paplay, for checking that bridge by hand
+#   rsgain              ReplayGain scanning
 RUN apt update && apt install -y less man-db sudo \
-    ffmpeg libasound2-dev pkg-config libasound2-plugins pulseaudio-utils
+    ffmpeg libasound2-dev pkg-config libasound2-plugins pulseaudio-utils rsgain
 
 # Send ALSA's default device to the PulseAudio server named by $PULSE_SERVER.
 # `fallback` keeps a real device working if one is ever passed through, and an
@@ -39,10 +40,6 @@ RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
 ENV DEVCONTAINER=true
 
 RUN rustup component add rustfmt clippy
-
-RUN apt-get update && apt-get install -y \
-  ffmpeg \
-  rsgain
 
 USER $USERNAME
 
