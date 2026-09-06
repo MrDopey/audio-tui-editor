@@ -4,19 +4,107 @@
 //! rejects one outright — but its demuxer already reconstructs an
 //! `attached_pic` stream from a `METADATA_BLOCK_PICTURE` Vorbis comment when
 //! reading one back. So instead of mapping the picture as a stream, it is
-//! extracted once up front and carried as that tag on every attempt.
+//! extracted once up front and carried as that tag instead — but as an
+//! `ffmetadata` sidecar *file* fed to ffmpeg as a second input, never as a
+//! `-metadata` command-line argument: a cover image easily runs to several
+//! megabytes once base64-encoded, and argv has no room for that (`E2BIG`,
+//! "Argument list too long", well before any unusually large process
+//! environment would even become a factor).
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use super::super::probe::MediaInfo;
 use super::super::{backend_command, ffmpeg_bin};
 
+/// An `ffmetadata`-format sidecar file, deleted when dropped.
+pub(super) struct MetadataSidecar {
+    path: PathBuf,
+}
+
+impl MetadataSidecar {
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for MetadataSidecar {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Builds the sidecar carrying every tag the output's audio stream should
+/// end up with (the source's own tags, with `edits` applied) plus the
+/// attached picture, for an Ogg/Opus/Vorbis file that has one.
+///
+/// Best-effort like the rest of cover-art handling: any failure (no
+/// picture, an image format not recognised, ffmpeg erroring, the sidecar
+/// file itself not writable) yields `None` rather than failing the save —
+/// losing cover art beats losing the file. `beside` should be the directory
+/// the save's own temp output lives in, so the sidecar is on the same
+/// filesystem and gets cleaned up alongside it.
+pub(super) fn build_sidecar(
+    info: &MediaInfo,
+    edits: &BTreeMap<String, Option<String>>,
+    beside: &Path,
+) -> Option<MetadataSidecar> {
+    let picture = extract_metadata_block_picture(&info.path)?;
+
+    let mut tags = info.all_tags();
+    for (key, value) in edits {
+        match value {
+            Some(v) => {
+                tags.insert(key.clone(), v.clone());
+            }
+            None => {
+                tags.remove(key);
+            }
+        }
+    }
+
+    let path = beside.join(format!(".audioedit-cover-{}.ffmeta", std::process::id()));
+    std::fs::write(&path, ffmetadata_body(&tags, &picture)).ok()?;
+    Some(MetadataSidecar { path })
+}
+
+/// The `ffmetadata`-format text body: a `;FFMETADATA1` header, one escaped
+/// `key=value` line per tag, then the picture. See ffmpeg's own
+/// documentation for the format and its escaping rules (`=`, `;`, `#`, `\`
+/// and a literal newline all need a leading backslash).
+fn ffmetadata_body(tags: &BTreeMap<String, String>, picture: &str) -> String {
+    let mut body = String::from(";FFMETADATA1\n");
+    for (key, value) in tags {
+        body.push_str(key);
+        body.push('=');
+        body.push_str(&escape_ffmetadata_value(value));
+        body.push('\n');
+    }
+    body.push_str("metadata_block_picture=");
+    body.push_str(picture);
+    body.push('\n');
+    body
+}
+
+fn escape_ffmetadata_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '=' | ';' | '#' | '\\' | '\n') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 /// Extracts the attached picture from `path` and returns it as a base64
-/// `METADATA_BLOCK_PICTURE` value, ready to pass straight to a
-/// `-metadata:s:a:0` argument. Best-effort: any failure (no picture,
-/// an image format we don't recognise, ffmpeg erroring) yields `None`
-/// rather than failing the save — losing cover art beats losing the file.
-pub(super) fn extract_metadata_block_picture(path: &Path) -> Option<String> {
+/// `METADATA_BLOCK_PICTURE` value (the raw tag value, for [`ffmetadata_body`]
+/// to place in a sidecar file — never as a command-line argument). Best
+/// effort: any failure (no picture, an image format we don't recognise,
+/// ffmpeg erroring) yields `None` rather than failing the save — losing
+/// cover art beats losing the file.
+fn extract_metadata_block_picture(path: &Path) -> Option<String> {
     let output = backend_command(&ffmpeg_bin())
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
@@ -143,5 +231,26 @@ mod tests {
         assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
         assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn ffmetadata_escapes_special_characters_in_values() {
+        assert_eq!(escape_ffmetadata_value("plain"), "plain");
+        assert_eq!(
+            escape_ffmetadata_value("a=b;c#d\\e\nf"),
+            "a\\=b\\;c\\#d\\\\e\\\nf"
+        );
+    }
+
+    #[test]
+    fn ffmetadata_body_carries_every_tag_and_the_picture() {
+        let mut tags = BTreeMap::new();
+        tags.insert("title".to_string(), "My Title".to_string());
+        tags.insert("artist".to_string(), "A & B".to_string());
+        let body = ffmetadata_body(&tags, "BASE64==");
+        assert!(body.starts_with(";FFMETADATA1\n"));
+        assert!(body.contains("title=My Title\n"));
+        assert!(body.contains("artist=A & B\n"));
+        assert!(body.ends_with("metadata_block_picture=BASE64==\n"));
     }
 }

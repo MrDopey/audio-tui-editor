@@ -390,6 +390,79 @@ fn cover_art_on_an_opus_file_survives_a_trim() {
     assert!(temp_files(ws.path()).is_empty());
 }
 
+#[test]
+fn cover_art_too_large_for_a_command_line_argument_still_saves() {
+    // A base64-encoded picture this size could never travel as a single
+    // `-metadata` argv value -- it blows well past argv's per-string and
+    // total size limits (`E2BIG`, "Argument list too long"). Regression
+    // test for exactly that: the save pipeline must route it through a
+    // sidecar file instead. Even building the *fixture* has to go the same
+    // way, for the same reason.
+    let ws = Workspace::new("cover_opus_big");
+    let cover = ws.path().join("cover.png");
+    let ok = Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "nullsrc=size=900x900,geq=random(1)*255:128:128",
+            "-frames:v",
+            "1",
+        ])
+        .arg(&cover)
+        .status()
+        .expect("running ffmpeg")
+        .success();
+    assert!(ok, "could not build a large cover image");
+    let cover_size = std::fs::metadata(&cover).unwrap().len();
+    assert!(
+        cover_size > 500_000,
+        "the fixture image must be large enough to matter, got {cover_size} bytes"
+    );
+
+    let audio = ws.make("plain.opus", &["-c:a", "libopus", "-b:a", "64k"]);
+    let with_cover = ws.path().join("withcover.opus");
+    let picture = base64_encode(&metadata_block_picture(
+        "image/png",
+        &std::fs::read(&cover).unwrap(),
+    ));
+    let meta_file = ws.path().join("fixture.ffmeta");
+    std::fs::write(
+        &meta_file,
+        format!(";FFMETADATA1\nmetadata_block_picture={picture}\n"),
+    )
+    .unwrap();
+    let ok = Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(&audio)
+        .args(["-f", "ffmetadata", "-i"])
+        .arg(&meta_file)
+        .args(["-map", "0:a", "-map_metadata", "1", "-c", "copy"])
+        .arg(&with_cover)
+        .status()
+        .expect("running ffmpeg")
+        .success();
+    assert!(ok, "could not attach cover art to the opus fixture");
+
+    let info = probe_ok(&with_cover);
+    assert!(info.has_cover_art, "the fixture should carry cover art");
+
+    let outcome = ffmpeg::save(&info, &SaveRequest::trim(0.1, 0.6))
+        .expect("saving must not hit E2BIG for a large embedded picture");
+    let saved = probe_ok(&with_cover);
+
+    assert_eq!(
+        outcome.metadata.cover_art,
+        CoverArt::Preserved,
+        "expected a large cover image to survive a trim of an opus file"
+    );
+    assert!(saved.has_cover_art, "cover art was falsely reported kept");
+    assert!(temp_files(ws.path()).is_empty());
+}
+
 /// FLAC-style `METADATA_BLOCK_PICTURE` block (type 3 = front cover), built
 /// independently of `audioedit::media::ffmpeg::cover_art` so this fixture
 /// doesn't just exercise the same code it's meant to be testing against.

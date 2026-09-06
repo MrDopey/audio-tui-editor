@@ -35,7 +35,7 @@ pub(super) fn run_attempt(
     span: f64,
     edits: &BTreeMap<String, Option<String>>,
     attempt: Attempt,
-    cover_art_tag: Option<&str>,
+    cover_art_sidecar: Option<&Path>,
 ) -> Result<()> {
     let mut command = backend_command(&ffmpeg_bin());
     command.args(["-y", "-v", "error", "-nostdin"]);
@@ -44,12 +44,18 @@ pub(super) fn run_attempt(
     command.arg("-ss").arg(format!("{begin:.6}"));
     command.arg("-t").arg(format!("{span:.6}"));
     command.arg("-i").arg(&info.path);
+    // The sidecar (input 1) carries every tag plus the picture in one shot
+    // when present — see `-map_metadata` below — rather than as argv, where
+    // a base64-encoded cover image would risk `E2BIG`.
+    if let Some(sidecar) = cover_art_sidecar {
+        command.args(["-f", "ffmetadata", "-i"]).arg(sidecar);
+    }
 
     // Ogg's muxer cannot write a video stream under any circumstances, so
     // mapping the cover-art stream into an Ogg/Opus/Vorbis output always
-    // fails outright. When that's the case it is re-attached as a
-    // `METADATA_BLOCK_PICTURE` tag instead (see `cover_art_tag`), so the
-    // video stream must never be mapped here.
+    // fails outright. When that's the case it is re-attached via
+    // `cover_art_sidecar` instead, so the video stream must never be mapped
+    // here.
     let maps_video = attempt.all_streams && !(is_ogg_container(info) && info.has_cover_art);
     if maps_video {
         command.args(["-map", "0"]);
@@ -72,18 +78,19 @@ pub(super) fn run_attempt(
         }
     }
 
-    command.args(["-map_metadata", "0", "-map_chapters", "0"]);
-
-    let scope = metadata_scope(info);
-    for (key, value) in edits {
-        command.arg(format!("-metadata{scope}"));
-        // An empty value is how ffmpeg is told to drop a tag.
-        command.arg(format!("{key}={}", value.as_deref().unwrap_or("")));
-    }
-    if !maps_video {
-        if let Some(picture) = cover_art_tag {
+    command.args(["-map_chapters", "0"]);
+    if cover_art_sidecar.is_some() {
+        // The sidecar already has the full, final tag set (source tags plus
+        // edits plus the picture), so it replaces `-map_metadata 0` and the
+        // per-key loop below rather than adding to them.
+        command.args(["-map_metadata", "1"]);
+    } else {
+        command.args(["-map_metadata", "0"]);
+        let scope = metadata_scope(info);
+        for (key, value) in edits {
             command.arg(format!("-metadata{scope}"));
-            command.arg(format!("metadata_block_picture={picture}"));
+            // An empty value is how ffmpeg is told to drop a tag.
+            command.arg(format!("{key}={}", value.as_deref().unwrap_or("")));
         }
     }
 
