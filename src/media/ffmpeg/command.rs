@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use anyhow::{bail, Context, Result};
 
 use super::super::probe::{MediaInfo, METADATA_FIELDS};
-use super::super::{ffmpeg_bin, missing_backend_hint, tail_of};
+use super::super::{ffmpeg_bin, missing_backend_hint, require_success};
 use super::{Attempt, Processing};
 
 /// Stream copy snaps to packet boundaries, so output duration is allowed to
@@ -89,10 +89,8 @@ pub(super) fn run_attempt(
             )
         })?;
 
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        bail!("{}", tail_of(&stderr, 4));
-    }
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    require_success(result.status, &stderr, "", 4)?;
     Ok(())
 }
 

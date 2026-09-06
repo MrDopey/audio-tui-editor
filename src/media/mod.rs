@@ -6,9 +6,9 @@ pub mod probe;
 pub mod scan;
 pub mod waveform;
 
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 
 /// Path to the `ffmpeg` binary, overridable for unusual installs.
 pub fn ffmpeg_bin() -> String {
@@ -66,6 +66,21 @@ pub fn tail_of(stderr: &str, lines: usize) -> String {
         .collect();
     let start = collected.len().saturating_sub(lines);
     collected[start..].join("\n")
+}
+
+/// Fail with a `stderr` tail if a subprocess's exit status wasn't success —
+/// the "spawned fine, then errored out" check shared by every ffmpeg/ffprobe
+/// call site. `what` is folded in as `"{what}: {tail}"`; pass `""` when the
+/// caller already prefixes its own context (e.g. which save attempt failed).
+pub fn require_success(status: ExitStatus, stderr: &str, what: &str, tail_lines: usize) -> Result<()> {
+    if status.success() {
+        return Ok(());
+    }
+    let tail = tail_of(stderr, tail_lines);
+    if what.is_empty() {
+        bail!("{tail}");
+    }
+    bail!("{what}: {tail}");
 }
 
 #[cfg(test)]

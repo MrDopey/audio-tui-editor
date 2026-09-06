@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use super::{ffprobe_bin, missing_backend_hint, tail_of};
+use super::{ffprobe_bin, missing_backend_hint, require_success};
 
 // Re-exported so existing callers (`crate::media::probe::scan_folder`, etc.)
 // keep working now that scanning lives in its own module.
@@ -157,14 +157,13 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
             )
         })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "ffprobe failed for {}: {}",
-            path.display(),
-            tail_of(&stderr, 3)
-        );
-    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    require_success(
+        output.status,
+        &stderr,
+        &format!("ffprobe failed for {}", path.display()),
+        3,
+    )?;
 
     let parsed: ProbeOutput = serde_json::from_slice(&output.stdout)
         .with_context(|| format!("parsing ffprobe output for {}", path.display()))?;

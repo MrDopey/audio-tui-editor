@@ -10,9 +10,9 @@ use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
-use super::{ffmpeg_bin, missing_backend_hint, tail_of};
+use super::{ffmpeg_bin, missing_backend_hint, require_success};
 
 /// Decode rate. Low enough to be quick on long files, high enough for a
 /// faithful amplitude envelope.
@@ -172,17 +172,16 @@ fn decode(path: &Path, duration: f64) -> Result<Waveform> {
     }
 
     let status = child.wait().context("waiting for ffmpeg")?;
-    if !status.success() {
-        let mut stderr = String::new();
-        if let Some(mut handle) = child.stderr.take() {
-            let _ = handle.read_to_string(&mut stderr);
-        }
-        bail!(
-            "ffmpeg could not decode {}: {}",
-            path.display(),
-            tail_of(&stderr, 3)
-        );
+    let mut stderr = String::new();
+    if let Some(mut handle) = child.stderr.take() {
+        let _ = handle.read_to_string(&mut stderr);
     }
+    require_success(
+        status,
+        &stderr,
+        &format!("ffmpeg could not decode {}", path.display()),
+        3,
+    )?;
 
     let rms = squares.iter().map(|s| s.sqrt() as f32).collect();
     Ok(Waveform {

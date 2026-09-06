@@ -7,9 +7,9 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
-use super::{ffmpeg_bin, tail_of};
+use super::{ffmpeg_bin, require_success};
 use crate::config::AutoTrim as AutoTrimConfig;
 
 /// How close to a boundary a silence must be to count as leading/trailing.
@@ -119,13 +119,12 @@ fn run_silencedetect(path: &Path, threshold_db: f64, min_duration: f64) -> Resul
         .with_context(|| format!("running silence detection on {}", path.display()))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        bail!(
-            "silence detection failed for {}: {}",
-            path.display(),
-            tail_of(&stderr, 3)
-        );
-    }
+    require_success(
+        output.status,
+        &stderr,
+        &format!("silence detection failed for {}", path.display()),
+        3,
+    )?;
     Ok(parse_silences(&stderr))
 }
 
