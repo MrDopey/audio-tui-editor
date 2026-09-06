@@ -1,6 +1,6 @@
 //! The `:` command line and prompt submission (design §19).
 
-use super::{App, MarkerKind, Overlay, PendingNav, Prompt, PromptKind};
+use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind};
 use crate::batch::RunMode;
 use crate::timespec::{parse_cursor_pos, Marker};
 
@@ -22,7 +22,12 @@ impl App {
                 // just confirm it rather than searching again, which would
                 // skip past a match already on screen.
                 let pattern = self.last_search.clone();
-                if self.current_file_matches(&pattern) {
+                let matched = if self.mode == Mode::Metadata {
+                    self.current_field_matches(&pattern)
+                } else {
+                    self.current_file_matches(&pattern)
+                };
+                if matched {
                     self.info(format!("/{pattern}"));
                 } else {
                     self.warn(format!("Pattern not found: {pattern}"));

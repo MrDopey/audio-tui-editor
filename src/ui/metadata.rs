@@ -15,10 +15,12 @@ pub(super) fn render_metadata(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     };
 
+    let visible = session.visible_field_count();
     let lines: Vec<Line> = session
         .fields
         .iter()
         .enumerate()
+        .take(visible)
         .map(|(index, field)| {
             let selected = index == session.field_index;
             let marker = if selected { "▸ " } else { "  " };
@@ -54,11 +56,17 @@ pub(super) fn render_metadata(frame: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
+    let title = if session.show_all_fields {
+        " Metadata (all fields) "
+    } else {
+        " Metadata "
+    };
+
     frame.render_widget(
         Paragraph::new(lines).block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
-                .title(" Metadata ")
+                .title(title)
                 .title_style(Style::default().fg(ACCENT)),
         ),
         area,

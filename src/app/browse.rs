@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, PendingNav, Prompt, PromptKind};
+use super::{App, Mode, PendingNav, Prompt, PromptKind};
 
 impl App {
     pub(super) fn on_browse_key(&mut self, key: KeyEvent) {
@@ -42,7 +42,13 @@ impl App {
         self.selected = (self.selected as isize + delta).clamp(0, last) as usize;
     }
 
+    /// `n`/`N`: repeat the last `/` search — over file names in BROWSE, or
+    /// (see [`App::repeat_search_fields`]) over metadata fields in METADATA.
     pub(super) fn repeat_search(&mut self, forward: bool) {
+        if self.mode == Mode::Metadata {
+            self.repeat_search_fields(forward);
+            return;
+        }
         if self.last_search.is_empty() {
             self.warn("No search pattern. Press / to search.");
             return;
@@ -80,6 +86,10 @@ impl App {
     /// With no match, fall back to `search_origin` rather than leaving the
     /// selection on a stale hit from an earlier, longer buffer.
     pub(super) fn live_search(&mut self, needle: &str) {
+        if self.mode == Mode::Metadata {
+            self.live_search_fields(needle);
+            return;
+        }
         let Some(origin) = self.search_origin else {
             return;
         };
@@ -109,9 +119,17 @@ impl App {
     /// Cancel an in-progress `/` search, restoring the pre-search selection
     /// (vim-style incsearch: `Esc` undoes the live preview).
     pub(super) fn cancel_search(&mut self) {
-        if let Some(origin) = self.search_origin.take() {
-            self.selected = origin;
+        let Some(origin) = self.search_origin.take() else {
+            return;
+        };
+        if self.mode == Mode::Metadata {
+            if let Some(session) = &mut self.session {
+                let last = session.visible_field_count().saturating_sub(1);
+                session.field_index = origin.min(last);
+            }
+            return;
         }
+        self.selected = origin;
     }
 
     pub(super) fn current_file_matches(&self, needle: &str) -> bool {

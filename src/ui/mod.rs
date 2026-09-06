@@ -153,7 +153,7 @@ fn hint_text(app: &App) -> &'static str {
             "h/l move marker  C-h/C-l large  C-j/C-k song  Tab switch  b/e set here  B/E/i type +10s -1m 50%  a auto  r reset both  :w save  Esc back"
         }
         Mode::Metadata => {
-            "j/k field  C-j/C-k song  Enter edit  u revert  :w save  :wq save & leave  Esc back"
+            "j/k field  C-j/C-k song  a all fields  / n N search  Enter edit  u revert  :w save  Esc back"
         }
     }
 }

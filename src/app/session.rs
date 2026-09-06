@@ -45,6 +45,9 @@ pub struct Session {
     pub markers_dirty: bool,
     pub fields: Vec<MetaField>,
     pub field_index: usize,
+    /// `false`: only the preconfigured `METADATA_FIELDS` are reachable.
+    /// `true` (toggled by `a`): every tag the file carries is, too.
+    pub show_all_fields: bool,
     /// Whether automatic markers have been requested for this session.
     auto_requested: bool,
     /// Set by an explicit recalculation request: the next suggestion should
@@ -57,18 +60,7 @@ impl Session {
         let duration = info.duration;
         let player = AudioPlayer::new(output, &info.path, duration, volume);
 
-        let fields = METADATA_FIELDS
-            .iter()
-            .map(|(key, label)| {
-                let value = info.tag(key).map(str::to_string);
-                MetaField {
-                    key: (*key).to_string(),
-                    label: (*label).to_string(),
-                    original: value.clone(),
-                    value,
-                }
-            })
-            .collect();
+        let fields = build_fields(&info);
 
         let mut session = Session {
             index,
@@ -82,6 +74,7 @@ impl Session {
             markers_dirty: false,
             fields,
             field_index: 0,
+            show_all_fields: false,
             auto_requested: false,
             override_next_suggestion: false,
         };
@@ -260,6 +253,71 @@ impl Session {
         self.active = self.active.toggled();
         true
     }
+
+    /// How many of `fields` field navigation can currently reach: just the
+    /// preconfigured set, or everything, once `show_all_fields` is set.
+    pub fn visible_field_count(&self) -> usize {
+        if self.show_all_fields {
+            self.fields.len()
+        } else {
+            METADATA_FIELDS.len().min(self.fields.len())
+        }
+    }
+
+    /// `a`: reveal every tag the file actually carries, not just the
+    /// preconfigured set, or hide them again. Clamps `field_index` back
+    /// onto the (possibly now shorter) visible range.
+    pub(super) fn toggle_all_fields(&mut self) {
+        self.show_all_fields = !self.show_all_fields;
+        let last = self.visible_field_count().saturating_sub(1);
+        self.field_index = self.field_index.min(last);
+    }
+}
+
+/// Every preconfigured field (in `METADATA_FIELDS` order), followed by
+/// whatever other tags the file carries that aren't already covered —
+/// alphabetical, since `MediaInfo::all_tags` hands them back in key order.
+fn build_fields(info: &MediaInfo) -> Vec<MetaField> {
+    let mut fields: Vec<MetaField> = METADATA_FIELDS
+        .iter()
+        .map(|(key, label)| {
+            let value = info.tag(key).map(str::to_string);
+            MetaField {
+                key: (*key).to_string(),
+                label: (*label).to_string(),
+                original: value.clone(),
+                value,
+            }
+        })
+        .collect();
+
+    for (key, value) in info.all_tags() {
+        if METADATA_FIELDS.iter().any(|(k, _)| *k == key) {
+            continue;
+        }
+        fields.push(MetaField {
+            label: humanize(&key),
+            key,
+            original: Some(value.clone()),
+            value: Some(value),
+        });
+    }
+    fields
+}
+
+/// `"album_artist"` -> `"Album Artist"`, for the label of a tag that isn't
+/// in the preconfigured list and so has no curated label of its own.
+fn humanize(key: &str) -> String {
+    key.split(['_', '-'])
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
