@@ -10,6 +10,10 @@ use crate::media::waveform::{self, Waveform};
 use crate::player::{AudioOutput, AudioPlayer};
 use crate::timespec::Marker;
 
+/// Minimum gap kept between `begin` and `end` when clamping one against the
+/// other, so they never land exactly on top of each other.
+const MARKER_GAP_SECONDS: f64 = 0.01;
+
 /// One editable metadata field (design §18).
 #[derive(Debug, Clone)]
 pub struct MetaField {
@@ -174,7 +178,7 @@ impl Session {
         let duration = self.duration();
         match kind {
             MarkerKind::Begin => {
-                let limit = (self.end.seconds() - 0.01).max(0.0);
+                let limit = (self.end.seconds() - MARKER_GAP_SECONDS).max(0.0);
                 self.begin = if marker.seconds() > limit {
                     Marker::absolute(limit, duration)
                 } else {
@@ -182,7 +186,7 @@ impl Session {
                 };
             }
             MarkerKind::End => {
-                let limit = (self.begin.seconds() + 0.01).min(duration);
+                let limit = (self.begin.seconds() + MARKER_GAP_SECONDS).min(duration);
                 self.end = if marker.seconds() < limit {
                     Marker::absolute(limit, duration)
                 } else {
