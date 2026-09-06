@@ -5,6 +5,8 @@
 //! instead of acting immediately; [`App::perform_nav`] is what actually runs
 //! once that's settled (or was never in question).
 
+use std::time::Instant;
+
 use super::{App, MarkerKind, Mode, Overlay, PendingNav, Prompt, PromptKind, Session};
 use crate::player::AudioPlayer;
 use crate::timespec::Marker;
@@ -68,13 +70,10 @@ impl App {
 
         if self.session.as_ref().is_some_and(|s| s.index == next) {
             match resume_mode {
-                Mode::Edit => {
-                    let config = self.config.clone();
-                    if let Some(session) = &mut self.session {
-                        session.start_auto_markers(&config);
-                    }
-                    self.mode = Mode::Edit;
-                }
+                // Same as entering EDIT directly (`e` in PLAY): stay on
+                // whatever markers this file already has and wait for the
+                // user to press `a` rather than guessing a trim eagerly.
+                Mode::Edit => self.mode = Mode::Edit,
                 Mode::Metadata => self.mode = Mode::Metadata,
                 Mode::Browse | Mode::Play => {}
             }
@@ -88,41 +87,42 @@ impl App {
 
     // ---- marker helpers --------------------------------------------------
 
-    pub(super) fn nudge_marker(&mut self, kind: MarkerKind, delta: f64) {
+    /// Move the cursor (Left/Right in EDIT) — the playback position. The
+    /// active marker keeps following; a crossing with the other marker is
+    /// allowed to stand until [`App::tick`] settles it once movement stops
+    /// — see [`Session::drag_active_marker`].
+    pub(super) fn move_cursor(&mut self, delta: f64) {
+        self.last_cursor_move = Some(Instant::now());
         if let Some(session) = &mut self.session {
-            session.nudge(kind, delta);
+            session.move_cursor(delta);
         }
     }
 
-    pub(super) fn set_marker_at_playhead(&mut self, kind: MarkerKind) {
-        if let Some(session) = &mut self.session {
-            let position = session.player.position();
-            let duration = session.duration();
-            session.active = kind;
-            session.set_marker(kind, Marker::absolute(position, duration));
-        }
-    }
-
+    /// `b`/`e`/`i`: open the typed-jump prompt for a marker (`i` targets
+    /// whichever is already active). Submitting moves the cursor there and
+    /// makes that marker the active, hugging one — see
+    /// `App::jump_marker_from_prompt` in `command.rs`.
     pub(super) fn prompt_for_marker(&mut self, kind: MarkerKind) {
         let current = self
             .session
             .as_ref()
             .map(|s| s.marker(kind).text().to_string())
             .unwrap_or_default();
-        self.prompt = Some(Prompt::new(PromptKind::Marker(kind), current));
+        self.prompt = Some(Prompt::with_placeholder(PromptKind::Marker(kind), current));
     }
 
     pub(super) fn prompt_for_cursor(&mut self) {
         let current = self
             .session
             .as_ref()
-            .map(|s| s.marker(s.active).text().to_string())
+            .map(|s| crate::timespec::format_timestamp(s.player.position()))
             .unwrap_or_default();
         self.prompt = Some(Prompt::with_placeholder(PromptKind::Cursor, current));
     }
 
-    /// Seek playback to the active marker's position without starting
-    /// playback (unlike `p`, which seeks and plays).
+    /// Seek playback to the active marker's position without playing
+    /// (unlike `p`, which seeks there and plays) — useful to preview where
+    /// a marker sits without engaging the cursor/drag machinery.
     pub(super) fn seek_to_active_marker(&mut self) {
         let target = self.session.as_ref().map(|s| s.marker(s.active).seconds());
         if let Some(target) = target {
@@ -154,6 +154,7 @@ impl App {
             let duration = session.duration();
             session.begin = Marker::absolute(0.0, duration);
             session.end = Marker::absolute(duration, duration);
+            session.active = MarkerKind::Begin;
             session.markers_dirty = true;
         }
         self.info("Markers reset to the whole file.");

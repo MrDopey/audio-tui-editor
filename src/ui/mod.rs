@@ -32,6 +32,10 @@ const BLOCKS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇',
 const ACCENT: Color = Color::Cyan;
 const RETAINED: Color = Color::Green;
 const REMOVED: Color = Color::DarkGray;
+/// The marker currently hugging the cursor, and the cursor itself in EDIT —
+/// one color ties the two together so it's obvious which marker (if any)
+/// is grabbed.
+const HUGGING: Color = Color::Yellow;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let [header, body, footer] = Layout::vertical([

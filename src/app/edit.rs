@@ -19,24 +19,39 @@ impl App {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => self.mode = crate::app::Mode::Play,
             KeyCode::Left | KeyCode::Char('h') => {
-                self.nudge_marker(active, if ctrl { -large } else { -fine })
+                self.move_cursor(if ctrl { -large } else { -fine })
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.nudge_marker(active, if ctrl { large } else { fine })
+                self.move_cursor(if ctrl { large } else { fine })
             }
             KeyCode::Up | KeyCode::Char('k') if ctrl => self.cycle_song(-1),
             KeyCode::Down | KeyCode::Char('j') if ctrl => self.cycle_song(1),
             KeyCode::Tab | KeyCode::BackTab => {
+                // Switching which marker you're editing is a natural point
+                // to confirm a pending cursor-crossing correction (see
+                // `Session::drag_active_marker`), same as an idle pause or
+                // a save.
+                let corrected = self
+                    .session
+                    .as_mut()
+                    .is_some_and(super::Session::settle_crossed_markers);
                 if let Some(session) = &mut self.session {
                     session.active = session.active.toggled();
+                    // Pick up the other marker from where it actually sits,
+                    // so the next Left/Right resumes hugging it smoothly
+                    // instead of yanking it to wherever playback happened
+                    // to be.
+                    let target = session.marker(session.active).seconds();
+                    session.player.seek_to(target);
+                }
+                if corrected {
+                    self.info("Begin/End corrected to match.");
                 }
             }
-            KeyCode::Char('b') => self.set_marker_at_playhead(MarkerKind::Begin),
-            KeyCode::Char('e') => self.set_marker_at_playhead(MarkerKind::End),
-            KeyCode::Char('B') => self.prompt_for_marker(MarkerKind::Begin),
-            KeyCode::Char('E') => self.prompt_for_marker(MarkerKind::End),
+            KeyCode::Char('b') => self.prompt_for_marker(MarkerKind::Begin),
+            KeyCode::Char('e') => self.prompt_for_marker(MarkerKind::End),
             KeyCode::Char('i') => self.prompt_for_marker(active),
-            KeyCode::Char('C') => self.prompt_for_cursor(),
+            KeyCode::Char('c') => self.prompt_for_cursor(),
             KeyCode::Char('g') => self.seek_to_active_marker(),
             KeyCode::Char(' ') => self.with_player(AudioPlayer::toggle),
             KeyCode::Char('p') => {
@@ -146,12 +161,12 @@ mod tests {
     }
 
     #[test]
-    fn shift_c_opens_a_cursor_prompt_shadowed_by_the_active_markers_position() {
+    fn c_opens_a_cursor_prompt_shadowed_by_the_cursors_position() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('e'));
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         let prompt = app.prompt.as_ref().unwrap();
         assert!(
             prompt.buffer.is_empty(),

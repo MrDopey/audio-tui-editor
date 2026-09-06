@@ -46,10 +46,11 @@ impl App {
     }
 
     /// This lives in PLAY because it is only ever reachable via its `e` key.
+    /// Deliberately does not kick off automatic marker detection — that only
+    /// runs when the user asks for it with `a` (design: EDIT opens on
+    /// whatever markers already exist, not a fresh auto-trim guess).
     fn enter_edit_mode(&mut self) {
-        let config = self.config.clone();
-        if let Some(session) = &mut self.session {
-            session.start_auto_markers(&config);
+        if self.session.is_some() {
             self.mode = crate::app::Mode::Edit;
         }
     }

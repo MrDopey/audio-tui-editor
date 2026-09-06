@@ -117,6 +117,17 @@ pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
         return Ok(PosSpec::Percent(pct));
     }
 
+    // `++`/`--` mean the same thing here as `+`/`-` (there's no "current
+    // position" for a Begin/End marker to be relative to, unlike the
+    // Cursor prompt's `parse_cursor_pos`, where they're a distinct meaning
+    // from single `+`/`-`) — accepted so the same doubled-dash habit that
+    // prompt teaches doesn't silently misparse as a negative duration here.
+    if let Some(rest) = s.strip_prefix("++") {
+        return Ok(PosSpec::FromStart(parse_duration(rest)?));
+    }
+    if let Some(rest) = s.strip_prefix("--") {
+        return Ok(PosSpec::FromEnd(parse_duration(rest)?));
+    }
     if let Some(rest) = s.strip_prefix('+') {
         return Ok(PosSpec::FromStart(parse_duration(rest)?));
     }
@@ -256,6 +267,19 @@ mod tests {
         assert_eq!(parse_pos("+1m").unwrap(), PosSpec::FromStart(60.0));
         assert_eq!(parse_pos("-1m").unwrap(), PosSpec::FromEnd(60.0));
         assert_eq!(parse_pos("50%").unwrap(), PosSpec::Percent(50.0));
+    }
+
+    #[test]
+    fn a_doubled_dash_means_the_same_as_a_single_one() {
+        // The Cursor prompt gives `++`/`--` a distinct meaning (see
+        // `cursor_pos_prefixes_pick_the_right_reference_point`), but a
+        // Begin/End marker has no "current position" to be relative to, so
+        // here they're just accepted as synonyms rather than misparsing
+        // "--10" as the negative duration "-10".
+        assert_eq!(parse_pos("--10s").unwrap(), PosSpec::FromEnd(10.0));
+        assert_eq!(parse_pos("++10s").unwrap(), PosSpec::FromStart(10.0));
+        assert_eq!(parse_pos("--10").unwrap(), PosSpec::FromEnd(10.0));
+        assert_eq!(parse_pos("++10").unwrap(), PosSpec::FromStart(10.0));
     }
 
     #[test]

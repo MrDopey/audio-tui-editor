@@ -38,6 +38,9 @@ pub struct Session {
     pub auto: Analysis<TrimSuggestion>,
     pub begin: Marker,
     pub end: Marker,
+    /// The marker currently hugging the cursor — moving the cursor
+    /// (Left/Right, `c`, or a typed `b`/`e` jump) always drags this one
+    /// along. There's no "neither" state; Tab switches which one it is.
     pub active: MarkerKind,
     pub markers_dirty: bool,
     pub fields: Vec<MetaField>,
@@ -195,17 +198,71 @@ impl Session {
         self.markers_dirty = true;
     }
 
-    pub(super) fn nudge(&mut self, kind: MarkerKind, delta: f64) {
+    /// Move the cursor (Left/Right in EDIT) — the playback position itself,
+    /// there is no separate cursor value — and keep the active marker
+    /// snapped to it. See [`Session::drag_active_marker`].
+    pub(super) fn move_cursor(&mut self, delta: f64) {
+        self.player.seek_by(delta);
+        self.drag_active_marker();
+    }
+
+    /// Keep `active` snapped to the cursor (possibly past the *other*
+    /// marker — see [`Session::settle_crossed_markers`]). Called after any
+    /// cursor move: Left/Right, a typed `c` jump, or a typed `b`/`e` jump
+    /// (which also sets `active` first).
+    pub(super) fn drag_active_marker(&mut self) {
+        let active = self.active;
+        self.snap_marker_to_cursor(active);
+    }
+
+    /// Snap `kind`'s marker to the cursor (the playback position), even if
+    /// that pushes it past the *other* marker. Crossing is allowed to
+    /// stand transiently — while the user is still moving, Begin can
+    /// briefly read past End — and only gets resolved by
+    /// [`Session::settle_crossed_markers`], not here. That keeps every
+    /// keystroke cheap and avoids a role-swap mid-drag that would make the
+    /// marker you're moving suddenly not be the one under your cursor.
+    fn snap_marker_to_cursor(&mut self, kind: MarkerKind) {
         let duration = self.duration();
-        let moved = self.marker(kind).nudged(delta, duration);
-        self.set_marker(kind, moved);
+        let cursor = self.player.position();
+        match kind {
+            MarkerKind::Begin => self.begin = Marker::absolute(cursor, duration),
+            MarkerKind::End => self.end = Marker::absolute(cursor, duration),
+        }
+        self.markers_dirty = true;
+    }
+
+    /// True while Begin/End are inverted from an in-progress cursor drag —
+    /// a transient state [`Session::settle_crossed_markers`] resolves once
+    /// the user stops moving, switches marker focus, or saves.
+    pub fn is_crossed(&self) -> bool {
+        self.begin.seconds() > self.end.seconds()
+    }
+
+    /// Resolve a crossed Begin/End by pinning the *other* (non-active)
+    /// marker to the cursor — the active one already equals it — so
+    /// cursor == Begin == End, a zero-length range at the cursor, rather
+    /// than snapping the marker being dragged back to a stale position.
+    /// Returns whether a correction actually happened, so callers can tell
+    /// the user.
+    pub(super) fn settle_crossed_markers(&mut self) -> bool {
+        if !self.is_crossed() {
+            return false;
+        }
+        let duration = self.duration();
+        let cursor = self.player.position();
+        match self.active {
+            MarkerKind::Begin => self.end = Marker::absolute(cursor, duration),
+            MarkerKind::End => self.begin = Marker::absolute(cursor, duration),
+        }
+        true
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::tests::{app, press};
+    use crate::app::tests::{app, press, type_text};
     use crate::app::{Mode, Overlay};
     use ratatui::crossterm::event::KeyCode;
 
@@ -240,8 +297,121 @@ mod tests {
         press(&mut app, KeyCode::Char('e'));
         press(&mut app, KeyCode::Tab);
         assert_eq!(app.session.as_ref().unwrap().active, MarkerKind::End);
+
+        // Tab already picked End up from its own position, so Left/Right
+        // drags it immediately — no separate "engage" step needed.
         press(&mut app, KeyCode::Char('h'));
         assert_eq!(app.session.as_ref().unwrap().end.seconds(), 599.0);
+    }
+
+    #[test]
+    fn b_and_e_jump_the_cursor_and_switch_which_marker_follows_it() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e')); // EDIT
+
+        // `b` opens a typed jump; the cursor moves there and Begin hugs it.
+        press(&mut app, KeyCode::Char('b'));
+        type_text(&mut app, "100");
+        press(&mut app, KeyCode::Enter);
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.begin.seconds(), 100.0);
+        assert_eq!(session.active, MarkerKind::Begin);
+
+        // `e` does the same for End.
+        press(&mut app, KeyCode::Char('e'));
+        type_text(&mut app, "300");
+        press(&mut app, KeyCode::Enter);
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.end.seconds(), 300.0);
+        assert_eq!(session.active, MarkerKind::End);
+    }
+
+    #[test]
+    fn crossing_the_other_marker_is_transient_until_settled() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e')); // EDIT, Begin active, End at 600
+
+        // Drag Begin's cursor past End: allowed to stand, not clamped.
+        press(&mut app, KeyCode::Char('b'));
+        type_text(&mut app, "650"); // clamped to the file's duration on seek
+        press(&mut app, KeyCode::Enter);
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.begin.seconds(), 600.0);
+        assert_eq!(session.end.seconds(), 600.0);
+        assert!(!session.is_crossed(), "600 == 600 isn't a crossing");
+
+        // Force a real crossing directly, then settle it: End should catch
+        // up to the cursor (Begin's value), not the other way around.
+        {
+            let session = app.session.as_mut().unwrap();
+            session.begin = crate::timespec::Marker::absolute(400.0, 600.0);
+            session.end = crate::timespec::Marker::absolute(200.0, 600.0);
+            session.player.seek_to(400.0);
+            session.active = MarkerKind::Begin;
+        }
+        assert!(app.session.as_ref().unwrap().is_crossed());
+        assert!(app.session.as_mut().unwrap().settle_crossed_markers());
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.end.seconds(), 400.0);
+        assert!(!session.is_crossed());
+    }
+
+    #[test]
+    fn tab_settles_a_pending_crossing_immediately() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        {
+            let session = app.session.as_mut().unwrap();
+            session.begin = crate::timespec::Marker::absolute(400.0, 600.0);
+            session.end = crate::timespec::Marker::absolute(200.0, 600.0);
+            session.player.seek_to(400.0);
+            session.active = MarkerKind::Begin;
+        }
+        press(&mut app, KeyCode::Tab);
+        let session = app.session.as_ref().unwrap();
+        assert!(!session.is_crossed(), "Tab should settle before toggling");
+        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.end.seconds(), 400.0);
+        assert!(app.status.as_ref().is_some_and(|s| !s.is_error));
+    }
+
+    #[test]
+    fn an_idle_tick_settles_a_pending_crossing() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        {
+            let session = app.session.as_mut().unwrap();
+            session.begin = crate::timespec::Marker::absolute(400.0, 600.0);
+            session.end = crate::timespec::Marker::absolute(200.0, 600.0);
+            session.player.seek_to(400.0);
+            session.active = MarkerKind::Begin;
+        }
+        app.last_cursor_move = Some(std::time::Instant::now());
+
+        // Fresh from the last move: too soon to auto-correct.
+        app.tick();
+        assert!(app.session.as_ref().unwrap().is_crossed());
+
+        // Backdate the last move past the settle delay.
+        app.last_cursor_move = Some(
+            std::time::Instant::now()
+                - crate::app::CURSOR_SETTLE_DELAY
+                - std::time::Duration::from_millis(1),
+        );
+        app.tick();
+        let session = app.session.as_ref().unwrap();
+        assert!(!session.is_crossed(), "idle long enough, should now settle");
+        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.end.seconds(), 400.0);
     }
 
     #[test]

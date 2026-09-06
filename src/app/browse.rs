@@ -22,7 +22,8 @@ impl App {
             KeyCode::PageDown => self.move_selection(page),
             KeyCode::PageUp => self.move_selection(-page),
             KeyCode::Char('/') => {
-                self.prompt = Some(Prompt::new(PromptKind::Search, String::new()))
+                self.search_origin = Some(self.selected);
+                self.prompt = Some(Prompt::new(PromptKind::Search, String::new()));
             }
             KeyCode::Char('n') => self.repeat_search(true),
             KeyCode::Char('N') => self.repeat_search(false),
@@ -71,6 +72,53 @@ impl App {
         }
         let pattern = self.last_search.clone();
         self.warn(format!("Pattern not found: {pattern}"));
+    }
+
+    /// Live "as you type" preview for the `/` prompt: jump the selection to
+    /// the first match at or after `search_origin`, wrapping, so the file
+    /// currently under the cursor previews before `Enter` commits to it.
+    /// With no match, fall back to `search_origin` rather than leaving the
+    /// selection on a stale hit from an earlier, longer buffer.
+    pub(super) fn live_search(&mut self, needle: &str) {
+        let Some(origin) = self.search_origin else {
+            return;
+        };
+        if self.files.is_empty() {
+            return;
+        }
+        if needle.is_empty() {
+            self.selected = origin;
+            return;
+        }
+        let needle = needle.to_lowercase();
+        let count = self.files.len();
+        for offset in 0..count {
+            let index = (origin + offset) % count;
+            if self.files[index]
+                .file_name()
+                .to_lowercase()
+                .contains(&needle)
+            {
+                self.selected = index;
+                return;
+            }
+        }
+        self.selected = origin;
+    }
+
+    /// Cancel an in-progress `/` search, restoring the pre-search selection
+    /// (vim-style incsearch: `Esc` undoes the live preview).
+    pub(super) fn cancel_search(&mut self) {
+        if let Some(origin) = self.search_origin.take() {
+            self.selected = origin;
+        }
+    }
+
+    pub(super) fn current_file_matches(&self, needle: &str) -> bool {
+        let needle = needle.to_lowercase();
+        self.files
+            .get(self.selected)
+            .is_some_and(|f| f.file_name().to_lowercase().contains(&needle))
     }
 
     pub(super) fn open_selected(&mut self) {
@@ -148,6 +196,52 @@ mod tests {
         type_text(&mut app, "nothing");
         press(&mut app, KeyCode::Enter);
         assert!(app.status.as_ref().unwrap().is_error);
+    }
+
+    #[test]
+    fn search_previews_the_match_live_before_enter_is_pressed() {
+        let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
+        app.overlay = Overlay::None;
+
+        press(&mut app, KeyCode::Char('/'));
+        assert_eq!(app.selected, 0, "no preview yet with an empty buffer");
+        type_text(&mut app, "gam");
+        assert_eq!(app.selected, 2, "eagerly jumps to the match while typing");
+        // Committing shouldn't search again past the already-previewed hit.
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.selected, 2);
+    }
+
+    #[test]
+    fn escaping_a_search_restores_the_pre_search_selection() {
+        let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
+        app.overlay = Overlay::None;
+        app.selected = 1;
+
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "gam");
+        assert_eq!(app.selected, 2, "previewed the match");
+
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(
+            app.selected, 1,
+            "cancelling restores where the search started"
+        );
+        assert!(app.prompt.is_none());
+    }
+
+    #[test]
+    fn a_live_search_with_no_match_holds_at_the_starting_selection() {
+        let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
+        app.overlay = Overlay::None;
+        app.selected = 1;
+
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "zzz");
+        assert_eq!(
+            app.selected, 1,
+            "no match yet, stays put rather than jumping"
+        );
     }
 
     #[test]

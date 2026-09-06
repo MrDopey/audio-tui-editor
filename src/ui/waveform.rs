@@ -6,8 +6,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 use ratatui::Frame;
 
-use super::{ACCENT, BLOCKS, REMOVED, RETAINED};
-use crate::app::Session;
+use super::{ACCENT, BLOCKS, HUGGING, REMOVED, RETAINED};
+use crate::app::{MarkerKind, Session};
 use crate::timespec::format_timestamp;
 
 /// Draw the waveform, the playback cursor and (in EDIT) the marker range.
@@ -60,6 +60,15 @@ pub(super) fn render_waveform(
             .iter()
             .enumerate()
             .map(|(col, (peak, rms))| {
+                if col == position_column && show_markers {
+                    // In EDIT, the cursor gets a full-height bar so a
+                    // one-column move is impossible to miss (it's also
+                    // what `b`/`e` snap a marker onto).
+                    return Span::styled(
+                        "│",
+                        Style::default().fg(HUGGING).add_modifier(Modifier::BOLD),
+                    );
+                }
                 // Peak sets the outline, RMS fills the body.
                 let level = (*peak).max(*rms * 1.2).clamp(0.0, 1.0);
                 let eighths = (level as f64 * (bar_rows * 8) as f64).round() as isize;
@@ -86,17 +95,29 @@ pub(super) fn render_waveform(
     if position_column < width {
         cursor[position_column] = '│';
     }
+    // The marker currently hugging the cursor gets HUGGING-colored, bold,
+    // underlined text — bold alone reads as barely different on many
+    // terminals, so the underline is what actually makes "this one moves
+    // with you" pop at a glance. The other marker stays plain RETAINED.
+    let marker_style = |kind: MarkerKind| {
+        if session.active == kind {
+            Style::default()
+                .fg(HUGGING)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(RETAINED)
+        }
+    };
     let mut cursor_spans: Vec<Span> = Vec::with_capacity(width);
     for (col, ch) in cursor.iter().enumerate() {
         let (glyph, style) = if show_markers && col == begin_column {
-            (
-                'b',
-                Style::default().fg(RETAINED).add_modifier(Modifier::BOLD),
-            )
+            ('b', marker_style(MarkerKind::Begin))
         } else if show_markers && col == end_column {
+            ('e', marker_style(MarkerKind::End))
+        } else if show_markers && col == position_column {
             (
-                'e',
-                Style::default().fg(RETAINED).add_modifier(Modifier::BOLD),
+                *ch,
+                Style::default().fg(HUGGING).add_modifier(Modifier::BOLD),
             )
         } else {
             (*ch, Style::default().fg(Color::White))

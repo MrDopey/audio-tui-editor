@@ -22,8 +22,9 @@ mod session;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
 
 use crate::config::Config;
@@ -153,6 +154,10 @@ pub struct StatusMessage {
 /// `(name, duration, format)`, as shown in the browse list (design §5).
 pub type FileRow = (String, String, String);
 
+/// How long the cursor must sit still before a crossed Begin/End (see
+/// `Session::hug_cursor`) auto-corrects on its own, in `App::tick`.
+const CURSOR_SETTLE_DELAY: Duration = Duration::from_secs(3);
+
 pub struct App {
     pub config: Config,
     pub folder: PathBuf,
@@ -167,6 +172,15 @@ pub struct App {
     pub session: Option<Session>,
     pub status: Option<StatusMessage>,
     pub last_search: String,
+    /// The selection before the current `/` search started, so live search
+    /// has somewhere to search forward from and `Esc` has somewhere to
+    /// restore to. `None` when no Search prompt is open.
+    search_origin: Option<usize>,
+    /// Last time the cursor moved (Left/Right or `b`/`e`) in EDIT mode. A
+    /// crossed Begin/End (see `Session::hug_cursor`) is only auto-corrected
+    /// once this has been idle for [`CURSOR_SETTLE_DELAY`] — i.e. once the
+    /// user has actually stopped moving, not on every keystroke.
+    last_cursor_move: Option<Instant>,
     pub should_quit: bool,
     // ---- renderer-owned scratch state -------------------------------
     // These five fields are measurements `ui.rs` takes of the terminal on
@@ -190,6 +204,9 @@ pub struct App {
     /// Volume carried across files so it feels like one application.
     volume: f64,
     pending_g: bool,
+    /// Set by a Ctrl-C press; a second, consecutive Ctrl-C force-quits.
+    /// Cleared by any other key, so it never lingers across unrelated input.
+    ctrl_c_armed: bool,
     /// Bumped every time `files` is replaced or one of its entries changes,
     /// so [`App::file_rows`] can skip re-formatting on frames where nothing
     /// changed (the browse list is redrawn up to 20 times a second).
@@ -227,6 +244,8 @@ impl App {
             session: None,
             status: None,
             last_search: String::new(),
+            search_origin: None,
+            last_cursor_move: None,
             should_quit: false,
             page_rows: 10,
             list_state: ListState::default(),
@@ -236,6 +255,7 @@ impl App {
             output,
             volume: 100.0,
             pending_g: false,
+            ctrl_c_armed: false,
             files_generation: 0,
             file_rows_cache: None,
             backend: Arc::new(FfmpegBackend),
@@ -292,6 +312,7 @@ impl App {
     /// Poll background workers. Returns true when something changed.
     pub fn tick(&mut self) -> bool {
         let mut changed = false;
+        let mut settled = false;
 
         if let Some(session) = &mut self.session {
             changed |= session.waveform.poll();
@@ -313,6 +334,20 @@ impl App {
                     session.player.pause();
                 }
             }
+            // A cursor drag can leave Begin/End transiently crossed (see
+            // `Session::hug_cursor`); only auto-correct once the user has
+            // actually stopped moving, not on every keystroke.
+            let idle = self
+                .last_cursor_move
+                .is_none_or(|t| t.elapsed() >= CURSOR_SETTLE_DELAY);
+            if idle && session.settle_crossed_markers() {
+                changed = true;
+                settled = true;
+            }
+        }
+
+        if settled {
+            self.info("Begin/End corrected to match.");
         }
 
         changed |= self.poll_save();
@@ -350,6 +385,22 @@ impl App {
 
     fn dispatch_key(&mut self, key: KeyEvent) {
         self.status = None;
+
+        // Ctrl-C is a universal escape hatch, ahead of overlays and prompts:
+        // the first press arms it and warns, a second, consecutive press
+        // force-quits (bypassing the unsaved-changes prompt, like `:q!`).
+        // Any other key disarms it, so it never fires from unrelated presses
+        // made much later.
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            if self.ctrl_c_armed {
+                self.should_quit = true;
+            } else {
+                self.ctrl_c_armed = true;
+                self.warn("Press Ctrl-C again to quit.");
+            }
+            return;
+        }
+        self.ctrl_c_armed = false;
 
         if !matches!(self.overlay, Overlay::None) {
             self.on_overlay_key(key);
@@ -481,6 +532,47 @@ mod tests {
         press(&mut app, KeyCode::Esc);
         assert_eq!(app.mode, Mode::Browse);
         assert!(app.session.is_none());
+    }
+
+    #[test]
+    fn entering_edit_mode_does_not_auto_trim() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e')); // EDIT
+        assert_eq!(app.mode, Mode::Edit);
+        assert!(
+            !app.session.as_ref().unwrap().auto.is_running(),
+            "auto-trim must wait for `a`, not run just from opening EDIT"
+        );
+    }
+
+    #[test]
+    fn a_single_ctrl_c_only_warns() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press_ctrl(&mut app, KeyCode::Char('c'));
+        assert!(!app.should_quit);
+        assert!(app.status.as_ref().unwrap().is_error);
+    }
+
+    #[test]
+    fn two_consecutive_ctrl_c_presses_force_quit() {
+        let mut app = app(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press_ctrl(&mut app, KeyCode::Char('c'));
+        press_ctrl(&mut app, KeyCode::Char('c'));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn an_intervening_key_disarms_ctrl_c() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press_ctrl(&mut app, KeyCode::Char('c'));
+        press(&mut app, KeyCode::Char('j')); // unrelated key in BROWSE
+        press_ctrl(&mut app, KeyCode::Char('c'));
+        assert!(!app.should_quit, "a non-Ctrl-C key should reset the arm");
     }
 
     #[test]

@@ -8,7 +8,7 @@ use ratatui::Frame;
 
 use super::play::render_transport;
 use super::waveform::render_waveform;
-use super::{ACCENT, RETAINED};
+use super::{ACCENT, HUGGING, RETAINED};
 use crate::app::{App, MarkerKind, Mode, Session};
 use crate::timespec::format_timestamp;
 
@@ -38,8 +38,13 @@ fn render_markers(frame: &mut Frame, session: &Session, area: Rect) {
     let marker_line = |kind: MarkerKind, marker: &crate::timespec::Marker| {
         let active = session.active == kind;
         let arrow = if active { "▸ " } else { "  " };
+        // Bold + underlined + HUGGING for the marker currently hugging the
+        // cursor — the underline is what actually reads as "moves with
+        // you" at a glance (bold alone is too subtle on its own).
         let style = if active {
-            Style::default().fg(RETAINED).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(HUGGING)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             Style::default()
         };

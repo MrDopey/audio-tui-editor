@@ -10,13 +10,25 @@ impl App {
         match prompt.kind {
             PromptKind::Command => self.run_command(&input),
             PromptKind::Search => {
+                // The live preview already moved `selected`; just stop
+                // treating a search as "in progress" without moving it back.
+                self.search_origin = None;
                 if input.is_empty() {
                     return;
                 }
                 self.last_search = input;
-                self.repeat_search(true);
+                // Live search has already previewed the match (or left the
+                // selection at the pre-search position if nothing matched);
+                // just confirm it rather than searching again, which would
+                // skip past a match already on screen.
+                let pattern = self.last_search.clone();
+                if self.current_file_matches(&pattern) {
+                    self.info(format!("/{pattern}"));
+                } else {
+                    self.warn(format!("Pattern not found: {pattern}"));
+                }
             }
-            PromptKind::Marker(kind) => self.set_marker_from_expression(kind, &input),
+            PromptKind::Marker(kind) => self.jump_marker_from_prompt(kind, &input),
             PromptKind::Cursor => self.set_cursor_from_expression(&input),
             PromptKind::MetadataField(index) => {
                 if let Some(session) = &mut self.session {
@@ -33,6 +45,12 @@ impl App {
         }
     }
 
+    /// `:b <pos>` / `:e <pos>`: set a marker to an absolute or
+    /// start/end-relative position, clamped so Begin/End can never cross
+    /// (see `Session::set_marker`). Distinct from the interactive `b`/`e`
+    /// prompt (`jump_marker_from_prompt`, below), which moves the cursor
+    /// and is relative to it, not the file's start/end, and allows a
+    /// transient crossing like any other drag.
     fn set_marker_from_expression(&mut self, kind: MarkerKind, input: &str) {
         let Some(duration) = self.session.as_ref().map(super::Session::duration) else {
             self.warn("No file is open.");
@@ -52,29 +70,61 @@ impl App {
         }
     }
 
-    /// Jump the active marker (the "cursor") to a typed position. Unlike
-    /// `set_marker_from_expression`, `+`/`-` here are relative to the
-    /// cursor's *current* position rather than the start/end of the file;
-    /// `++`/`--` reach the start/end the way `+`/`-` do for Begin/End.
-    fn set_cursor_from_expression(&mut self, input: &str) {
-        let Some((active, current, duration)) = self
+    /// `b`/`e`/`i`: type a jump for a marker. Moves the cursor there (same
+    /// grammar as the `c` cursor-jump prompt: `+`/`-` relative to the
+    /// cursor's current position, `++`/`--` from the start/end) and makes
+    /// `kind` the active, hugging marker — possibly crossing the other
+    /// marker transiently, same as dragging with Left/Right.
+    fn jump_marker_from_prompt(&mut self, kind: MarkerKind, input: &str) {
+        let Some((current, duration)) = self
             .session
             .as_ref()
-            .map(|s| (s.active, s.marker(s.active).seconds(), s.duration()))
+            .map(|s| (s.player.position(), s.duration()))
         else {
             self.warn("No file is open.");
             return;
         };
         match parse_cursor_pos(input, current, duration) {
             Ok(seconds) => {
-                let marker = Marker::absolute(seconds, duration);
+                self.with_player(|p| p.seek_to(seconds));
                 let shown = if let Some(session) = &mut self.session {
-                    session.set_marker(active, marker);
-                    session.marker(active).to_string()
+                    session.active = kind;
+                    session.drag_active_marker();
+                    session.marker(kind).to_string()
                 } else {
                     return;
                 };
-                self.info(format!("Cursor moved to {shown}"));
+                self.info(format!("{} marker set to {shown}", kind.label()));
+            }
+            Err(err) => self.warn(format!("{err}. Try 10:00, +10s, ++10s, --10s or 50%.")),
+        }
+    }
+
+    /// `c`: type a jump for the cursor (the playback position — there is no
+    /// separate cursor value), same as a large Left/Right move: the active
+    /// marker keeps hugging it, possibly crossing the other marker
+    /// transiently (see `Session::drag_active_marker`). `+`/`-` are
+    /// relative to the cursor's current position; `++`/`--` are from the
+    /// start/end of the file.
+    fn set_cursor_from_expression(&mut self, input: &str) {
+        let Some((current, duration)) = self
+            .session
+            .as_ref()
+            .map(|s| (s.player.position(), s.duration()))
+        else {
+            self.warn("No file is open.");
+            return;
+        };
+        match parse_cursor_pos(input, current, duration) {
+            Ok(seconds) => {
+                self.with_player(|p| p.seek_to(seconds));
+                if let Some(session) = &mut self.session {
+                    session.drag_active_marker();
+                }
+                self.info(format!(
+                    "Cursor moved to {}",
+                    crate::timespec::format_timestamp(seconds)
+                ));
             }
             Err(err) => self.warn(format!("{err}. Try 10:00, +10s, ++10s, --10s or 50%.")),
         }
@@ -172,12 +222,12 @@ mod tests {
         press(&mut app, KeyCode::Char('e'));
         press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
 
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "+5s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 15.0);
 
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "-20s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(
@@ -195,13 +245,13 @@ mod tests {
         press(&mut app, KeyCode::Char('e'));
         press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
 
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "++5s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 5.0);
 
         press(&mut app, KeyCode::Tab); // switch active marker to End
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "--5s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.session.as_ref().unwrap().end.seconds(), 595.0);
@@ -215,7 +265,7 @@ mod tests {
         press(&mut app, KeyCode::Char('e'));
         press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
 
-        press(&mut app, KeyCode::Char('C'));
+        press(&mut app, KeyCode::Char('c'));
         press(&mut app, KeyCode::Enter); // submit without typing anything
         assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 10.0);
     }

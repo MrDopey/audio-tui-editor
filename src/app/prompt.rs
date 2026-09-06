@@ -114,6 +114,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.prompt = None;
+                self.cancel_search();
                 return;
             }
             KeyCode::Enter => {
@@ -166,6 +167,15 @@ impl App {
                 prompt.insert(c);
             }
             _ => {}
+        }
+
+        // Eager ("incsearch"-style) search: preview the match live as the
+        // user types, before `Enter` commits to it.
+        if let Some(prompt) = &self.prompt {
+            if matches!(prompt.kind, PromptKind::Search) {
+                let buffer = prompt.buffer.clone();
+                self.live_search(&buffer);
+            }
         }
     }
 }
