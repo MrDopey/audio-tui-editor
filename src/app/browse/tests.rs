@@ -145,6 +145,7 @@
 
         press(&mut app, KeyCode::Char('w'));
         assert_eq!(app.pending_nav_after_save, Some(PendingNav::Open(1)));
+        assert!(app.save_rx.is_some());
     }
 
     #[test]

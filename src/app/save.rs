@@ -171,7 +171,6 @@ pub(super) fn fake_save_outcome(path: &str) -> SaveOutcome {
 mod tests {
     use super::*;
     use crate::app::tests::{app, press};
-    use crate::app::PendingNav;
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
@@ -245,20 +244,5 @@ mod tests {
             }
             _ => panic!("expected an error overlay after a failing save"),
         }
-    }
-
-    #[test]
-    fn choosing_save_in_the_discard_dialog_sets_the_pending_target() {
-        let mut app = app(&[("a.opus", 600.0), ("b.opus", 60.0)]);
-        app.overlay = Overlay::None;
-        press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Char('e'));
-        press(&mut app, KeyCode::Char('l')); // dirty
-
-        app.selected = 1;
-        app.open_selected();
-        press(&mut app, KeyCode::Char('w'));
-        assert_eq!(app.pending_nav_after_save, Some(PendingNav::Open(1)));
-        assert!(app.save_rx.is_some());
     }
 }

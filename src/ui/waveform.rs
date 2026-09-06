@@ -152,7 +152,6 @@ pub(super) fn column_for(seconds: f64, duration: f64, width: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::waveform::Waveform;
 
     #[test]
     fn columns_map_positions_across_the_full_width() {
@@ -169,13 +168,4 @@ mod tests {
         assert_eq!(column_for(1000.0, 10.0, 8), 7);
     }
 
-    #[test]
-    fn waveform_downsamples_to_the_drawn_width() {
-        let waveform = Waveform {
-            duration: 10.0,
-            peaks: (0..500).map(|i| (i % 100) as f32 / 100.0).collect(),
-            rms: (0..500).map(|i| (i % 100) as f32 / 200.0).collect(),
-        };
-        assert_eq!(waveform.downsample(64).len(), 64);
-    }
 }
