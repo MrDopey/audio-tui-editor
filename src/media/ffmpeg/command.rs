@@ -6,10 +6,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 
 use super::super::probe::{MediaInfo, METADATA_FIELDS};
-use super::super::{ffmpeg_bin, missing_backend_hint, require_success};
+use super::super::{ffmpeg_bin, require_success, spawn_error_hint};
 use super::{Attempt, Processing};
 
 /// Stream copy snaps to packet boundaries, so output duration is allowed to
@@ -94,11 +94,11 @@ pub(super) fn run_attempt(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-        .with_context(|| {
-            format!(
-                "running ffmpeg for {}. {}",
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "running ffmpeg for {}: {}",
                 info.path.display(),
-                missing_backend_hint(&ffmpeg_bin())
+                spawn_error_hint(&ffmpeg_bin(), &err)
             )
         })?;
 

@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
-use super::{ffmpeg_bin, missing_backend_hint, require_success};
+use super::{ffmpeg_bin, require_success, spawn_error_hint};
 
 /// Decode rate. Low enough to be quick on long files, high enough for a
 /// faithful amplitude envelope.
@@ -95,11 +95,11 @@ fn decode(path: &Path, duration: f64) -> Result<Waveform> {
         .stderr(Stdio::piped())
         .stdin(Stdio::null())
         .spawn()
-        .with_context(|| {
-            format!(
-                "decoding {} for waveform analysis. {}",
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "decoding {} for waveform analysis: {}",
                 path.display(),
-                missing_backend_hint(&ffmpeg_bin())
+                spawn_error_hint(&ffmpeg_bin(), &err)
             )
         })?;
 

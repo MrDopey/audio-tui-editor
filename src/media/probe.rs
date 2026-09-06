@@ -8,7 +8,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use super::{ffprobe_bin, missing_backend_hint, require_success};
+use super::{ffprobe_bin, require_success, spawn_error_hint};
 
 // Re-exported so existing callers (`crate::media::probe::scan_folder`, etc.)
 // keep working now that scanning lives in its own module.
@@ -149,11 +149,11 @@ pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
         ])
         .arg(path)
         .output()
-        .with_context(|| {
-            format!(
-                "running ffprobe on {}. {}",
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "running ffprobe on {}: {}",
                 path.display(),
-                missing_backend_hint(&ffprobe_bin())
+                spawn_error_hint(&ffprobe_bin(), &err)
             )
         })?;
 

@@ -8,7 +8,7 @@ pub mod waveform;
 
 use std::process::{Command, ExitStatus};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{bail, ensure, Result};
 
 /// Path to the `ffmpeg` binary, overridable for unusual installs.
 pub fn ffmpeg_bin() -> String {
@@ -20,14 +20,29 @@ pub fn ffprobe_bin() -> String {
     std::env::var("AUDIOEDIT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
 }
 
-/// The actionable hint shown whenever a backend binary cannot be run at all,
-/// whether that is discovered at startup or partway through a session (e.g.
-/// the binary was removed, or PATH changed under a long-running process).
-pub fn missing_backend_hint(bin: &str) -> String {
-    format!(
-        "could not run `{bin}`. audioedit needs ffmpeg and ffprobe on PATH \
-         (set AUDIOEDIT_FFMPEG / AUDIOEDIT_FFPROBE to override)"
-    )
+/// The actionable hint shown whenever a backend binary could not be spawned
+/// at all, whether that is discovered at startup or partway through a
+/// session (e.g. the binary was removed, or PATH changed under a
+/// long-running process).
+///
+/// Distinguishes a binary that genuinely isn't on PATH (`NotFound`) from one
+/// that exists but could not be executed for some other reason — wrong
+/// permissions, a sandboxed/restricted exec policy, a resource limit.
+/// Blaming PATH for both sends someone chasing PATH when the real problem,
+/// as reported by the OS, is something else entirely.
+pub fn spawn_error_hint(bin: &str, err: &std::io::Error) -> String {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "`{bin}` was not found on PATH. audioedit needs ffmpeg and ffprobe \
+             (set AUDIOEDIT_FFMPEG / AUDIOEDIT_FFPROBE to point at them directly)"
+        )
+    } else {
+        format!(
+            "`{bin}` is on PATH but could not be run: {err}. This is usually a \
+             permissions problem, or something sandboxing or restricting which \
+             binaries this process may execute — not a missing-PATH issue"
+        )
+    }
 }
 
 /// Verify both tools are present, and actually runnable, before the TUI takes
@@ -41,13 +56,21 @@ pub fn ensure_backend_available() -> Result<()> {
 /// A binary is only "available" if it both spawns and exits successfully; a
 /// binary that spawns but immediately errors out is not usable either.
 fn check_runnable(bin: &str) -> Result<()> {
-    let status = Command::new(bin)
+    let status = match Command::new(bin)
         .arg("-version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .with_context(|| missing_backend_hint(bin))?;
-    ensure!(status.success(), "{}", missing_backend_hint(bin));
+    {
+        Ok(status) => status,
+        Err(err) => bail!("{}", spawn_error_hint(bin, &err)),
+    };
+    ensure!(
+        status.success(),
+        "`{bin} -version` ran but exited with an error; audioedit needs a \
+         working ffmpeg and ffprobe (set AUDIOEDIT_FFMPEG / AUDIOEDIT_FFPROBE \
+         to point at a different binary)"
+    );
     Ok(())
 }
 
@@ -90,7 +113,9 @@ mod tests {
     #[test]
     fn a_binary_that_spawns_but_exits_nonzero_is_not_available() {
         let err = check_runnable("false").expect_err("`false` always exits non-zero");
-        assert!(format!("{err:#}").contains("PATH"));
+        // `false` is perfectly reachable on PATH, so the message must not
+        // send someone chasing PATH for what is actually a bad binary.
+        assert!(!format!("{err:#}").contains("PATH"));
     }
 
     #[test]
@@ -100,6 +125,25 @@ mod tests {
 
     #[test]
     fn a_binary_that_cannot_even_spawn_is_not_available() {
-        assert!(check_runnable("definitely-not-a-real-audioedit-binary").is_err());
+        let err = check_runnable("definitely-not-a-real-audioedit-binary")
+            .expect_err("no such binary exists");
+        assert!(
+            format!("{err:#}").contains("PATH"),
+            "a genuinely missing binary should still point at PATH"
+        );
+    }
+
+    #[test]
+    fn spawn_error_hint_blames_path_only_when_the_binary_is_truly_missing() {
+        let not_found = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(spawn_error_hint("ffmpeg", &not_found).contains("PATH"));
+
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let hint = spawn_error_hint("ffmpeg", &denied);
+        assert!(
+            hint.contains("not a missing-PATH issue"),
+            "a binary that exists but can't be run isn't a PATH problem"
+        );
+        assert!(hint.contains("permission"));
     }
 }

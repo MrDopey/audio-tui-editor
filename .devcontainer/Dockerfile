@@ -8,7 +8,9 @@ RUN $(groupadd -g $GROUP_ID customgroup || true) && \
     useradd -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USERNAME
 
 # Install basic development tools, plus what audioedit needs:
-#   ffmpeg              the media backend (decoding, trimming, muxing, probing)
+#   ffmpeg, ffprobe     the media backend (decoding, trimming, muxing) and the
+#                       probing tool (reading duration/tags/streams); both
+#                       ship in the same ffmpeg package
 #   libasound2-dev      ALSA headers, required to build the audio output backend
 #   libasound2-plugins  the ALSA -> PulseAudio bridge, so playback can leave the
 #                       container (see "On macOS (Apple Silicon)" in the README)
