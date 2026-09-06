@@ -155,7 +155,7 @@ pub struct StatusMessage {
 pub type FileRow = (String, String, String);
 
 /// How long the cursor must sit still before a crossed Begin/End (see
-/// `Session::hug_cursor`) auto-corrects on its own, in `App::tick`.
+/// `Session::drag_active_marker`) auto-corrects on its own, in `App::tick`.
 const CURSOR_SETTLE_DELAY: Duration = Duration::from_secs(3);
 
 pub struct App {
@@ -177,7 +177,7 @@ pub struct App {
     /// restore to. `None` when no Search prompt is open.
     search_origin: Option<usize>,
     /// Last time the cursor moved (Left/Right or `b`/`e`) in EDIT mode. A
-    /// crossed Begin/End (see `Session::hug_cursor`) is only auto-corrected
+    /// crossed Begin/End (see `Session::drag_active_marker`) is only auto-corrected
     /// once this has been idle for [`CURSOR_SETTLE_DELAY`] — i.e. once the
     /// user has actually stopped moving, not on every keystroke.
     last_cursor_move: Option<Instant>,
@@ -335,7 +335,7 @@ impl App {
                 }
             }
             // A cursor drag can leave Begin/End transiently crossed (see
-            // `Session::hug_cursor`); only auto-correct once the user has
+            // `Session::drag_active_marker`); only auto-correct once the user has
             // actually stopped moving, not on every keystroke.
             let idle = self
                 .last_cursor_move
@@ -347,7 +347,7 @@ impl App {
         }
 
         if settled {
-            self.info("Begin/End corrected to match.");
+            self.info("Begin/End swapped.");
         }
 
         changed |= self.poll_save();

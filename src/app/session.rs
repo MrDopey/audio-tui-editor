@@ -245,22 +245,19 @@ impl Session {
         self.begin.seconds() > self.end.seconds()
     }
 
-    /// Resolve a crossed Begin/End by pinning the *other* (non-active)
-    /// marker to the cursor — the active one already equals it — so
-    /// cursor == Begin == End, a zero-length range at the cursor, rather
-    /// than snapping the marker being dragged back to a stale position.
-    /// Returns whether a correction actually happened, so callers can tell
-    /// the user.
+    /// Resolve a crossed Begin/End by swapping which marker holds which
+    /// value — preserving the trimmed range's width instead of collapsing
+    /// it to a point — and flipping `active` to match, so it keeps naming
+    /// whichever marker now holds the cursor's own time (the marker being
+    /// dragged never appears to jump: it's still labeled differently, but
+    /// still sits at the time you were just at). Returns whether a
+    /// correction actually happened, so callers can tell the user.
     pub(super) fn settle_crossed_markers(&mut self) -> bool {
         if !self.is_crossed() {
             return false;
         }
-        let duration = self.duration();
-        let cursor = self.player.position();
-        match self.active {
-            MarkerKind::Begin => self.end = Marker::absolute(cursor, duration),
-            MarkerKind::End => self.begin = Marker::absolute(cursor, duration),
-        }
+        std::mem::swap(&mut self.begin, &mut self.end);
+        self.active = self.active.toggled();
         true
     }
 }
@@ -378,8 +375,9 @@ mod tests {
         assert_eq!(session.end.seconds(), 600.0);
         assert!(!session.is_crossed(), "600 == 600 isn't a crossing");
 
-        // Force a real crossing directly, then settle it: End should catch
-        // up to the cursor (Begin's value), not the other way around.
+        // Force a real crossing directly, then settle it: Begin/End swap
+        // values (preserving the 200s range width) and `active` flips to
+        // whichever marker now holds the cursor's time (400, still End).
         {
             let session = app.session.as_mut().unwrap();
             session.begin = crate::timespec::Marker::absolute(400.0, 600.0);
@@ -390,8 +388,9 @@ mod tests {
         assert!(app.session.as_ref().unwrap().is_crossed());
         assert!(app.session.as_mut().unwrap().settle_crossed_markers());
         let session = app.session.as_ref().unwrap();
-        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.begin.seconds(), 200.0);
         assert_eq!(session.end.seconds(), 400.0);
+        assert_eq!(session.active, MarkerKind::End);
         assert!(!session.is_crossed());
     }
 
@@ -411,8 +410,11 @@ mod tests {
         press(&mut app, KeyCode::Tab);
         let session = app.session.as_ref().unwrap();
         assert!(!session.is_crossed(), "Tab should settle before toggling");
-        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.begin.seconds(), 200.0);
         assert_eq!(session.end.seconds(), 400.0);
+        // Tab toggles from Begin (active when it was pressed) to End,
+        // regardless of whatever settling itself did to `active`.
+        assert_eq!(session.active, MarkerKind::End);
         assert!(app.status.as_ref().is_some_and(|s| !s.is_error));
     }
 
@@ -444,8 +446,9 @@ mod tests {
         app.tick();
         let session = app.session.as_ref().unwrap();
         assert!(!session.is_crossed(), "idle long enough, should now settle");
-        assert_eq!(session.begin.seconds(), 400.0);
+        assert_eq!(session.begin.seconds(), 200.0);
         assert_eq!(session.end.seconds(), 400.0);
+        assert_eq!(session.active, MarkerKind::End);
     }
 
     #[test]

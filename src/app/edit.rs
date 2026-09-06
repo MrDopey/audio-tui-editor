@@ -29,14 +29,18 @@ impl App {
             KeyCode::Tab | KeyCode::BackTab => {
                 // Switching which marker you're editing is a natural point
                 // to confirm a pending cursor-crossing correction (see
-                // `Session::drag_active_marker`), same as an idle pause or
-                // a save.
+                // `Session::settle_crossed_markers`), same as an idle pause
+                // or a save. Settling can itself flip `active` (to keep
+                // naming whichever marker holds the cursor's time), so Tab
+                // computes its own toggle from `active` as it was when the
+                // key was pressed — not from whatever settling just left it
+                // at — otherwise the two toggles could cancel out.
                 let corrected = self
                     .session
                     .as_mut()
                     .is_some_and(super::Session::settle_crossed_markers);
                 if let Some(session) = &mut self.session {
-                    session.active = session.active.toggled();
+                    session.active = active.toggled();
                     // Pick up the other marker from where it actually sits,
                     // so the next Left/Right resumes hugging it smoothly
                     // instead of yanking it to wherever playback happened
@@ -45,7 +49,7 @@ impl App {
                     session.player.seek_to(target);
                 }
                 if corrected {
-                    self.info("Begin/End corrected to match.");
+                    self.info("Begin/End swapped.");
                 }
             }
             KeyCode::Char('b') => self.prompt_for_marker(MarkerKind::Begin),

@@ -41,13 +41,13 @@ impl App {
             return;
         }
         // A cursor drag can leave Begin/End transiently crossed (see
-        // `Session::hug_cursor`); resolve that before it's ever written out.
+        // `Session::drag_active_marker`); resolve that before it's ever written out.
         if self
             .session
             .as_mut()
             .is_some_and(super::Session::settle_crossed_markers)
         {
-            self.info("Begin/End corrected to match before saving.");
+            self.info("Begin/End swapped before saving.");
         }
         let Some(session) = &self.session else {
             self.warn("No file is open. Open one with Enter.");
