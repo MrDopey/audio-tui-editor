@@ -156,32 +156,23 @@ pub fn run(
 
 fn process_one(number: usize, info: &MediaInfo, config: &Config, mode: RunMode) -> BatchItem {
     let name = info.file_name();
+    let item = |status: ItemStatus| BatchItem {
+        number,
+        name: name.clone(),
+        status,
+    };
 
     if info.duration <= 0.0 {
-        return BatchItem {
-            number,
-            name,
-            status: ItemStatus::Skipped("no measurable duration".to_string()),
-        };
+        return item(ItemStatus::Skipped("no measurable duration".to_string()));
     }
 
     let suggestion = match autotrim::detect(&info.path, info.duration, &config.auto_trim) {
         Ok(s) => s,
-        Err(err) => {
-            return BatchItem {
-                number,
-                name,
-                status: ItemStatus::Failed(err.to_string()),
-            }
-        }
+        Err(err) => return item(ItemStatus::Failed(err.to_string())),
     };
 
     if !suggestion.begin_detected && !suggestion.end_detected {
-        return BatchItem {
-            number,
-            name,
-            status: ItemStatus::NoOp,
-        };
+        return item(ItemStatus::NoOp);
     }
 
     // The suggestion's begin/end are the planned cut points; only a side
@@ -191,42 +182,26 @@ fn process_one(number: usize, info: &MediaInfo, config: &Config, mode: RunMode) 
 
     if mode.is_dry_run() {
         // Detection has run for real; only the write is withheld.
-        return BatchItem {
-            number,
-            name,
-            status: ItemStatus::WouldChange(Trim {
-                old_duration: info.duration,
-                new_duration: suggestion.end - suggestion.begin,
-                new_start,
-                new_end,
-            }),
-        };
+        return item(ItemStatus::WouldChange(Trim {
+            old_duration: info.duration,
+            new_duration: suggestion.end - suggestion.begin,
+            new_start,
+            new_end,
+        }));
     }
 
     match ffmpeg::save(
         info,
         &ffmpeg::SaveRequest::trim(suggestion.begin, suggestion.end),
     ) {
-        Ok(outcome) if outcome.noop => BatchItem {
-            number,
-            name,
-            status: ItemStatus::NoOp,
-        },
-        Ok(outcome) => BatchItem {
-            number,
-            name,
-            status: ItemStatus::Changed(Trim {
-                old_duration: outcome.source_duration,
-                new_duration: outcome.output_duration,
-                new_start,
-                new_end,
-            }),
-        },
-        Err(err) => BatchItem {
-            number,
-            name,
-            status: ItemStatus::Failed(format!("{err:#}")),
-        },
+        Ok(outcome) if outcome.noop => item(ItemStatus::NoOp),
+        Ok(outcome) => item(ItemStatus::Changed(Trim {
+            old_duration: outcome.source_duration,
+            new_duration: outcome.output_duration,
+            new_start,
+            new_end,
+        })),
+        Err(err) => item(ItemStatus::Failed(format!("{err:#}"))),
     }
 }
 
