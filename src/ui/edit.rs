@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 use ratatui::Frame;
 
+use super::cover_art_widget::split_for_cover_art;
 use super::play::render_transport;
 use super::waveform::render_waveform;
 use super::{ACCENT, HUGGING, RETAINED};
@@ -24,6 +25,11 @@ pub(super) fn render_edit(frame: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(3),
     ])
     .areas(area);
+
+    let show_cover_art =
+        app.show_cover_art && app.cover_art_supported() && session.info.has_cover_art;
+    let (markers, cover_art_area) = split_for_cover_art(markers, show_cover_art);
+    app.cover_art_area = cover_art_area;
 
     render_markers(frame, session, markers);
     render_waveform(frame, session, waveform, Some(()));

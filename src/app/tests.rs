@@ -13,7 +13,20 @@
     }
 
     /// An app with no audio device and no open file, for state-machine tests.
+    /// `cover_art_supported` is false, like every real non-Kitty terminal
+    /// these tests actually run in — use [`app_with_cover_art_support`] for
+    /// tests exercising the `i`/`I` toggle itself.
     pub(super) fn app(names: &[(&str, f64)]) -> App {
+        app_with(names, false)
+    }
+
+    /// Same as [`app`], but with `cover_art_supported` forced true, as if
+    /// the toggle key had been pressed in a real Kitty-protocol terminal.
+    pub(super) fn app_with_cover_art_support(names: &[(&str, f64)]) -> App {
+        app_with(names, true)
+    }
+
+    fn app_with(names: &[(&str, f64)], cover_art_supported: bool) -> App {
         let files = names.iter().map(|(n, d)| info(n, *d)).collect();
         App::new(
             PathBuf::from("/rec"),
@@ -21,6 +34,8 @@
             Vec::new(),
             Config::default(),
             AudioOutput::silent(),
+            cover_art_supported,
+            true,
         )
     }
 

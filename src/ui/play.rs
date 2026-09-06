@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 use ratatui::Frame;
 
+use super::cover_art_widget::split_for_cover_art;
 use super::waveform::render_waveform;
 use super::ACCENT;
 use crate::app::{App, Mode, Session};
@@ -25,6 +26,11 @@ pub(super) fn render_play(frame: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(3),
     ])
     .areas(area);
+
+    let show_cover_art =
+        app.show_cover_art && app.cover_art_supported() && session.info.has_cover_art;
+    let (details, cover_art_area) = split_for_cover_art(details, show_cover_art);
+    app.cover_art_area = cover_art_area;
 
     render_details(frame, &session.info, details);
     render_waveform(frame, session, waveform, None);

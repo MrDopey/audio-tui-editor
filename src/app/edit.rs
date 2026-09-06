@@ -68,6 +68,7 @@ impl App {
             }
             KeyCode::Char('a') => self.recalculate_auto_markers(),
             KeyCode::Char('r') => self.reset_markers(),
+            KeyCode::Char('i') => self.toggle_cover_art(),
             _ => {}
         }
     }
@@ -75,7 +76,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{app, press, press_ctrl};
+    use super::super::tests::{app, app_with_cover_art_support, press, press_ctrl};
     use crate::app::{Mode, Overlay};
     use ratatui::crossterm::event::KeyCode;
 
@@ -188,6 +189,17 @@ mod tests {
             "buffer starts empty, not prefilled"
         );
         assert_eq!(prompt.placeholder.as_deref(), Some("00:00"));
+    }
+
+    #[test]
+    fn i_toggles_cover_art_in_edit_mode() {
+        let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('e')); // EDIT
+        assert!(app.show_cover_art, "starts shown");
+        press(&mut app, KeyCode::Char('i'));
+        assert!(!app.show_cover_art);
     }
 
     #[test]

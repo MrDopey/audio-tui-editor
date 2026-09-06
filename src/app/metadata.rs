@@ -62,6 +62,9 @@ impl App {
                 }
                 self.info("Field reverted.");
             }
+            // Capital I, not lowercase i: lowercase is already taken above
+            // (Enter | 'i' opens the field-edit prompt).
+            KeyCode::Char('I') => self.toggle_cover_art(),
             _ => {}
         }
     }
@@ -146,7 +149,7 @@ fn field_matches(field: &super::MetaField, needle: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{app, press, press_ctrl, type_text};
+    use super::super::tests::{app, app_with_cover_art_support, press, press_ctrl, type_text};
     use crate::app::{Mode, Overlay};
     use ratatui::crossterm::event::KeyCode;
 
@@ -184,6 +187,42 @@ mod tests {
         press_ctrl(&mut app, KeyCode::Up);
         assert_eq!(app.mode, Mode::Metadata);
         assert_eq!(app.session.as_ref().unwrap().index, 0);
+    }
+
+    #[test]
+    fn capital_i_toggles_cover_art_in_metadata_mode() {
+        let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('m')); // METADATA
+        assert!(app.show_cover_art, "starts shown");
+        press(&mut app, KeyCode::Char('I'));
+        assert!(!app.show_cover_art);
+        assert!(
+            app.prompt.is_none(),
+            "capital I must not open the field prompt"
+        );
+    }
+
+    #[test]
+    fn lowercase_i_still_opens_the_metadata_field_prompt() {
+        // Regression guard: `i` was already bound to the field-edit prompt
+        // before cover art existed, so the toggle had to go on capital `I`
+        // instead -- this must not have quietly reassigned lowercase `i`.
+        let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('m'));
+        let before = app.show_cover_art;
+        press(&mut app, KeyCode::Char('i'));
+        assert!(
+            app.prompt.is_some(),
+            "lowercase i should open the field prompt"
+        );
+        assert_eq!(
+            app.show_cover_art, before,
+            "lowercase i must not touch the cover art toggle"
+        );
     }
 
     #[test]

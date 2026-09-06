@@ -49,6 +49,11 @@ pub struct Cli {
     #[arg(long)]
     pub no_audio: bool,
 
+    /// Don't show embedded cover art as an image at startup (only seeds the
+    /// initial value — `i`/`I` can still toggle it on at runtime).
+    #[arg(long)]
+    pub no_cover_art: bool,
+
     /// Log every ffmpeg/ffprobe command run (with argv/env byte sizes),
     /// capture a backtrace on error, and keep a failed save's temporary
     /// output on disk for inspection. Same as setting AUDIOEDIT_DEBUG=1.

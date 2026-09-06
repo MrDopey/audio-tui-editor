@@ -42,6 +42,7 @@ impl App {
             KeyCode::Char('c') => self.prompt_for_cursor(),
             KeyCode::Char('e') => self.enter_edit_mode(),
             KeyCode::Char('m') => self.mode = crate::app::Mode::Metadata,
+            KeyCode::Char('i') => self.toggle_cover_art(),
             _ => {}
         }
     }
@@ -78,7 +79,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{app, press, press_ctrl};
+    use super::super::tests::{app, app_with_cover_art_support, press, press_ctrl};
     use crate::app::Overlay;
     use ratatui::crossterm::event::KeyCode;
 
@@ -142,6 +143,32 @@ mod tests {
         let prompt = app.prompt.as_ref().unwrap();
         assert!(prompt.buffer.is_empty(), "buffer starts empty, not prefilled");
         assert_eq!(prompt.placeholder.as_deref(), Some("00:10"));
+    }
+
+    #[test]
+    fn i_toggles_cover_art_in_play_mode() {
+        let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        assert!(app.show_cover_art, "starts shown");
+        press(&mut app, KeyCode::Char('i'));
+        assert!(!app.show_cover_art);
+        press(&mut app, KeyCode::Char('i'));
+        assert!(app.show_cover_art);
+    }
+
+    #[test]
+    fn toggling_cover_art_without_terminal_support_warns_instead_of_flipping_the_flag() {
+        let mut app = app(&[("a.opus", 60.0)]); // cover_art_supported: false
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        let before = app.show_cover_art;
+        press(&mut app, KeyCode::Char('i'));
+        assert_eq!(
+            app.show_cover_art, before,
+            "the flag must not flip without terminal support"
+        );
+        assert!(app.status.as_ref().unwrap().is_error);
     }
 
     #[test]

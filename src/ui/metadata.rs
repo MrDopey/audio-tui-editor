@@ -1,11 +1,12 @@
 //! METADATA rendering: editable tag fields (design §18).
 
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 use ratatui::Frame;
 
+use super::cover_art_widget::{split_for_cover_art, COVER_ART_ROWS};
 use super::ACCENT;
 use crate::app::{App, Mode};
 
@@ -13,6 +14,23 @@ pub(super) fn render_metadata(frame: &mut Frame, app: &mut App, area: Rect) {
     let Some(session) = &app.session else {
         app.mode = Mode::Browse;
         return;
+    };
+
+    // Unlike PLAY/EDIT, METADATA has no existing top band to carve a corner
+    // out of — one is introduced here, but only when there is actually an
+    // image to reserve space for, so the common case (no cover art, or the
+    // terminal/toggle doesn't support it) keeps today's full-area list
+    // exactly as it was.
+    let show_cover_art =
+        app.show_cover_art && app.cover_art_supported() && session.info.has_cover_art;
+    let area = if show_cover_art {
+        let [top, rest] =
+            Layout::vertical([Constraint::Length(COVER_ART_ROWS), Constraint::Min(0)]).areas(area);
+        let (_, cover_art_area) = split_for_cover_art(top, true);
+        app.cover_art_area = cover_art_area;
+        rest
+    } else {
+        area
     };
 
     let lines: Vec<Line> = session

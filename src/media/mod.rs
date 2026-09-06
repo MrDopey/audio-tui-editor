@@ -1,6 +1,7 @@
 //! The media backend: everything that shells out to ffmpeg/ffprobe.
 
 pub mod autotrim;
+pub mod cover_art;
 pub mod ffmpeg;
 pub mod probe;
 pub mod scan;

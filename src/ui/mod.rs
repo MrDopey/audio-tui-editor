@@ -6,6 +6,7 @@
 //! PLAY and EDIT, and [`overlay`] draws the modal popups.
 
 mod browse;
+mod cover_art_widget;
 mod edit;
 mod help_text;
 mod metadata;
@@ -19,7 +20,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, Overlay};
 
 use browse::render_browse;
 use edit::render_edit;
@@ -47,6 +48,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .areas(frame.area());
 
     render_header(frame, app, header);
+    // Reset before mode dispatch: only PLAY/EDIT/METADATA's own render
+    // functions ever set this back to `Some`, so BROWSE (and falling back
+    // to it) never carries a stale reservation forward.
+    app.cover_art_area = None;
     match app.mode {
         Mode::Browse => render_browse(frame, app, body),
         Mode::Play => render_play(frame, app, body),
@@ -55,6 +60,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
     render_footer(frame, app, footer);
     render_overlay(frame, app);
+    // An overlay must never render under a Kitty-composited image, which
+    // sits above normal text cells regardless of what ratatui draws.
+    if !matches!(app.overlay, Overlay::None) {
+        app.cover_art_area = None;
+    }
 }
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {

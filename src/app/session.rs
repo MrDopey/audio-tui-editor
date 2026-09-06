@@ -5,6 +5,7 @@ use std::sync::mpsc::channel;
 use super::{Analysis, MarkerKind};
 use crate::config::Config;
 use crate::media::autotrim::{self, TrimSuggestion};
+use crate::media::cover_art::{self, RawCoverArt};
 use crate::media::probe::{MediaInfo, METADATA_FIELDS};
 use crate::media::waveform::{self, Waveform};
 use crate::player::{AudioOutput, AudioPlayer};
@@ -40,6 +41,9 @@ pub struct Session {
     pub player: AudioPlayer,
     pub waveform: Analysis<Waveform>,
     pub auto: Analysis<TrimSuggestion>,
+    /// The extracted cover-art image, if the file has one — `Ready(None)`
+    /// (no background thread ever spawned) when it doesn't.
+    pub cover_art: Analysis<Option<RawCoverArt>>,
     pub begin: Marker,
     pub end: Marker,
     /// The marker currently hugging the cursor — moving the cursor
@@ -69,6 +73,7 @@ impl Session {
             player,
             waveform: Analysis::Idle,
             auto: Analysis::Idle,
+            cover_art: Analysis::Idle,
             begin: Marker::absolute(0.0, duration),
             end: Marker::absolute(duration, duration),
             active: MarkerKind::Begin,
@@ -79,6 +84,7 @@ impl Session {
             override_next_suggestion: false,
         };
         session.start_waveform();
+        session.start_cover_art();
         session
     }
 
@@ -118,6 +124,22 @@ impl Session {
             let _ = tx.send(waveform::analyse(&path, duration));
         });
         self.waveform = Analysis::Running(rx);
+    }
+
+    /// Skips straight to `Ready(None)` (no thread spawned at all) when the
+    /// file has no cover art, so `App::desired_cover_art` never waits on
+    /// anything for the vastly more common case.
+    fn start_cover_art(&mut self) {
+        if !self.info.has_cover_art {
+            self.cover_art = Analysis::Ready(None);
+            return;
+        }
+        let (tx, rx) = channel();
+        let path = self.info.path.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Ok(cover_art::fetch(&path)));
+        });
+        self.cover_art = Analysis::Running(rx);
     }
 
     /// Kick off automatic marker detection, at most once per session.

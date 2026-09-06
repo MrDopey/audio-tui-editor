@@ -21,12 +21,13 @@ mod save;
 mod search;
 mod session;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 
 use crate::config::Config;
@@ -129,6 +130,13 @@ pub struct App {
     pub overlay: Overlay,
     pub prompt: Option<Prompt>,
     pub session: Option<Session>,
+    /// Whether cover art should be shown, when a session has one and the
+    /// terminal looks capable — the runtime `i`/`I` toggle. Seeded from
+    /// `--no-cover-art` at startup, but toggleable at any time afterward.
+    pub show_cover_art: bool,
+    /// Whether the terminal looks like it supports the Kitty graphics
+    /// protocol, detected once at startup (see `term::detect`).
+    cover_art_supported: bool,
     pub status: Option<StatusMessage>,
     pub last_search: String,
     /// The selection before the current `/` search started, so live search
@@ -158,6 +166,10 @@ pub struct App {
     /// Total and visible rows of the active overlay, measured by the renderer.
     pub overlay_lines: usize,
     pub overlay_view_rows: usize,
+    /// The top-right corner reserved for cover art this frame, if any —
+    /// set by whichever mode's render function ran, read by `main.rs`'s
+    /// `sync_cover_art` to know where (and whether) to place the image.
+    pub cover_art_area: Option<Rect>,
     // ---- end renderer-owned scratch state ----------------------------
     output: AudioOutput,
     /// Volume carried across files so it feels like one application.
@@ -190,6 +202,8 @@ impl App {
         skipped: Vec<SkippedFile>,
         config: Config,
         output: AudioOutput,
+        cover_art_supported: bool,
+        show_cover_art: bool,
     ) -> App {
         App {
             config,
@@ -201,6 +215,8 @@ impl App {
             overlay: Overlay::Warning,
             prompt: None,
             session: None,
+            show_cover_art,
+            cover_art_supported,
             status: None,
             last_search: String::new(),
             search_origin: None,
@@ -211,6 +227,7 @@ impl App {
             overlay_scroll: 0,
             overlay_lines: 0,
             overlay_view_rows: 0,
+            cover_art_area: None,
             output,
             volume: 25.0,
             pending_g: false,
@@ -238,6 +255,30 @@ impl App {
 
     pub fn audio_device_error(&self) -> Option<&str> {
         self.output.error()
+    }
+
+    pub fn cover_art_supported(&self) -> bool {
+        self.cover_art_supported
+    }
+
+    pub(super) fn toggle_cover_art(&mut self) {
+        if !self.cover_art_supported {
+            self.warn("This terminal doesn't look like it supports the Kitty graphics protocol.");
+            return;
+        }
+        self.show_cover_art = !self.show_cover_art;
+    }
+
+    /// What should currently be transmitted to the terminal, if anything:
+    /// the session's own path (identity for `main.rs`'s resync diff), the
+    /// reserved area (from this frame's render), and the ready PNG bytes.
+    /// `None` whenever any part of the chain isn't ready/enabled/visible —
+    /// cheap and synchronous, no I/O.
+    pub fn desired_cover_art(&self) -> Option<(&Path, Rect, &[u8])> {
+        let area = self.cover_art_area?;
+        let session = self.session.as_ref()?;
+        let art = session.cover_art.ready()?.as_ref()?;
+        Some((session.info.path.as_path(), area, art.bytes.as_slice()))
     }
 
     pub fn current(&self) -> Option<&MediaInfo> {
@@ -275,6 +316,7 @@ impl App {
 
         if let Some(session) = &mut self.session {
             changed |= session.waveform.poll();
+            changed |= session.cover_art.poll();
             if session.auto.poll() {
                 changed = true;
                 // Copy the suggestion out before mutating the session.

@@ -1,13 +1,14 @@
 //! audioedit — a vim-like terminal audio editor.
 
 use std::io::{IsTerminal, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use audioedit::{batch, media, ui};
+use audioedit::{batch, media, term, ui};
 use clap::Parser;
 use ratatui::crossterm::event::{self, Event};
+use ratatui::layout::Rect;
 
 use audioedit::app::App;
 use audioedit::batch::{OutputFormat, RunMode};
@@ -15,6 +16,7 @@ use audioedit::cli::Cli;
 use audioedit::config::Config;
 use audioedit::media::probe;
 use audioedit::player::AudioOutput;
+use audioedit::term::kitty;
 
 /// How often the screen is refreshed so the playback cursor moves smoothly.
 const FRAME: Duration = Duration::from_millis(50);
@@ -67,7 +69,16 @@ fn main() -> Result<()> {
     } else {
         AudioOutput::open()
     };
-    run_tui(App::new(folder, files, scan.skipped, config, output))
+    let cover_art_supported = term::detect::kitty_graphics_supported();
+    run_tui(App::new(
+        folder,
+        files,
+        scan.skipped,
+        config,
+        output,
+        cover_art_supported,
+        !cli.no_cover_art,
+    ))
 }
 
 /// The interactive application.
@@ -80,10 +91,17 @@ fn run_tui(mut app: App) -> Result<()> {
 
 fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
     let mut last_draw = Instant::now() - FRAME;
+    // Tracks what's currently placed via the Kitty graphics protocol, so a
+    // resync (delete + retransmit) only ever happens on an actual change —
+    // file switch, toggle flip, mode change, resize or overlay open/close —
+    // never on every ~50ms idle redraw tick.
+    let mut cover_art_shown: Option<(PathBuf, Rect)> = None;
+    let mut stdout = std::io::stdout();
     loop {
         if last_draw.elapsed() >= FRAME {
             terminal.draw(|frame| ui::render(frame, app))?;
             last_draw = Instant::now();
+            sync_cover_art(app, &mut cover_art_shown, &mut stdout)?;
         }
 
         if event::poll(FRAME)? {
@@ -104,6 +122,32 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
             return Ok(());
         }
     }
+}
+
+/// Diffs `App::desired_cover_art()` against `shown` and writes a
+/// delete+transmit to `out` only on a change, updating `shown` to match.
+/// `out` is the raw terminal byte sink, written to directly and
+/// independently of ratatui's own cell-diffed writes — safe because this
+/// only ever runs right after `terminal.draw` returns, never concurrently
+/// with it.
+fn sync_cover_art(
+    app: &App,
+    shown: &mut Option<(PathBuf, Rect)>,
+    out: &mut impl Write,
+) -> std::io::Result<()> {
+    let desired = app
+        .desired_cover_art()
+        .map(|(path, area, _)| (path.to_path_buf(), area));
+    if desired == *shown {
+        return Ok(());
+    }
+    out.write_all(&kitty::delete_own_placement())?;
+    if let Some((_, area, bytes)) = app.desired_cover_art() {
+        out.write_all(&kitty::transmit_and_display(bytes, area))?;
+    }
+    out.flush()?;
+    *shown = desired;
+    Ok(())
 }
 
 /// `--apply-defaults` / `--dry-run` without the TUI (design §17).
