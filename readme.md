@@ -341,9 +341,14 @@ audio-tui-editor/
 │   ├── config.rs         # config file schema, defaults and validation
 │   ├── text.rs           # shared string helpers (e.g. ellipsis truncation)
 │   ├── timespec.rs       # parsing of +10s / -1m / 50% / 10:00 positions
+│   ├── timespec/tests.rs
 │   ├── app/              # application state, modes and key handling
 │   │   ├── mod.rs        # App struct, mode dispatch, shared test fixtures
+│   │   ├── tests.rs
+│   │   ├── analysis.rs   # generic background-analysis poll/ready state
+│   │   ├── search.rs     # shared wraparound search (browse/metadata)
 │   │   ├── browse.rs     # browse-mode key handling
+│   │   ├── browse/tests.rs
 │   │   ├── play.rs       # play-mode key handling
 │   │   ├── edit.rs       # edit-mode key handling
 │   │   ├── metadata.rs   # metadata-mode key handling
@@ -351,7 +356,9 @@ audio-tui-editor/
 │   │   ├── prompt.rs     # `:` command prompt state and key handling
 │   │   ├── nav.rs        # navigation between songs and markers
 │   │   ├── command.rs    # `:` command parsing
+│   │   ├── command/tests.rs
 │   │   ├── session.rs    # the currently open file
+│   │   ├── session/tests.rs
 │   │   ├── save.rs       # background save/refresh pipeline
 │   │   └── batch_view.rs # background batch pipeline for the TUI
 │   ├── ui/               # ratatui rendering, one module per mode
@@ -361,13 +368,17 @@ audio-tui-editor/
 │   │   ├── edit.rs       # edit-mode rendering
 │   │   ├── metadata.rs   # metadata-mode rendering
 │   │   ├── waveform.rs   # waveform rendering, shared by play/edit
-│   │   └── overlay.rs    # popups, help and warning text
+│   │   ├── overlay.rs    # popups, help and warning rendering
+│   │   └── help_text.rs  # the `?` help screen's static text
 │   ├── player/           # transport, seeking and volume (rodio)
 │   │   ├── mod.rs        # AudioOutput / AudioPlayer
+│   │   ├── tests.rs
 │   │   └── decoder.rs    # ffmpeg-backed PCM decoder
 │   ├── batch/            # folder-wide trim, including dry runs
 │   │   ├── mod.rs        # run modes and the batch pipeline
-│   │   └── report.rs     # per-item and summary reporting
+│   │   ├── report.rs     # aggregate report rendering (table/csv/json)
+│   │   ├── report/tests.rs
+│   │   └── item.rs       # per-item shaping (BatchItem, Fields)
 │   └── media/            # everything that shells out to ffmpeg/ffprobe
 │       ├── mod.rs        # binary resolution (AUDIOEDIT_FFMPEG/FFPROBE)
 │       ├── probe.rs      # support detection and metadata reads
@@ -378,8 +389,10 @@ audio-tui-editor/
 │       │   └── cache.rs
 │       └── ffmpeg/       # the trim and save pipeline
 │           ├── mod.rs      # save orchestration and atomicity
+│           ├── tests.rs
 │           ├── command.rs  # ffmpeg command building and encoder selection
-│           └── metadata.rs # metadata comparison and reporting
+│           ├── metadata.rs # metadata comparison and reporting
+│           └── outcome.rs  # SaveOutcome and its summary rendering
 ├── tests/                # end-to-end tests against real audio
 │   ├── common/mod.rs     # shared fixtures (Workspace, probe_ok, ...)
 │   ├── probing.rs
