@@ -212,7 +212,7 @@ impl App {
             overlay_lines: 0,
             overlay_view_rows: 0,
             output,
-            volume: 100.0,
+            volume: 25.0,
             pending_g: false,
             ctrl_c_armed: false,
             files_generation: 0,

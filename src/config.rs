@@ -67,8 +67,8 @@ impl Default for Editing {
 impl Default for AutoTrim {
     fn default() -> Self {
         AutoTrim {
-            begin_threshold_db: -40.0,
-            end_threshold_db: -40.0,
+            begin_threshold_db: -50.0,
+            end_threshold_db: -50.0,
             begin_min_duration: 3.0,
             end_min_duration: 5.0,
         }
@@ -205,8 +205,8 @@ mod tests {
         assert_eq!(c.playback.volume_step, 5.0);
         assert_eq!(c.editing.fine_step_seconds, 1.0);
         assert_eq!(c.editing.large_step_seconds, 10.0);
-        assert_eq!(c.auto_trim.begin_threshold_db, -40.0);
-        assert_eq!(c.auto_trim.end_threshold_db, -40.0);
+        assert_eq!(c.auto_trim.begin_threshold_db, -50.0);
+        assert_eq!(c.auto_trim.end_threshold_db, -50.0);
         assert_eq!(c.auto_trim.begin_min_duration, 3.0);
         assert_eq!(c.auto_trim.end_min_duration, 5.0);
     }
@@ -224,8 +224,8 @@ fine_step_seconds = 1
 large_step_seconds = 10
 
 [auto_trim]
-begin_threshold_db = -40
-end_threshold_db = -40
+begin_threshold_db = -50
+end_threshold_db = -50
 begin_min_duration = 3
 end_min_duration = 5
 "#;
@@ -243,7 +243,7 @@ end_min_duration = 5
     fn partial_config_keeps_defaults() {
         let parsed: Config = toml::from_str("[auto_trim]\nbegin_threshold_db = -30\n").unwrap();
         assert_eq!(parsed.auto_trim.begin_threshold_db, -30.0);
-        assert_eq!(parsed.auto_trim.end_threshold_db, -40.0);
+        assert_eq!(parsed.auto_trim.end_threshold_db, -50.0);
         assert_eq!(parsed.playback.small_seek_seconds, 10.0);
     }
 
@@ -256,7 +256,7 @@ end_min_duration = 5
         })
         .unwrap();
         assert_eq!(c.auto_trim.begin_threshold_db, -30.0);
-        assert_eq!(c.auto_trim.end_threshold_db, -40.0);
+        assert_eq!(c.auto_trim.end_threshold_db, -50.0);
     }
 
     #[test]

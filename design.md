@@ -365,8 +365,8 @@ Both detections must have configurable minimum durations.
 Defaults:
 
 ```text
-begin threshold: -40 dB
-end threshold:   -40 dB
+begin threshold: -50 dB
+end threshold:   -50 dB
 
 begin minimum duration: 1 second
 end minimum duration:   1 second
@@ -391,8 +391,8 @@ fine_step_seconds = 1
 large_step_seconds = 10
 
 [auto_trim]
-begin_threshold_db = -40
-end_threshold_db = -40
+begin_threshold_db = -50
+end_threshold_db = -50
 begin_min_duration = 3
 end_min_duration = 5
 ```

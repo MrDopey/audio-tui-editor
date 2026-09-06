@@ -186,7 +186,7 @@ mod tests {
 
         let lines = app.apply_confirmation_lines();
         assert_eq!(lines[0], "Apply automatic trim to 2 files?");
-        assert!(lines.iter().any(|l| l.contains("begin -40 dB")));
+        assert!(lines.iter().any(|l| l.contains("begin -50 dB")));
         assert!(lines.iter().any(|l| l.contains("[Esc] cancel")));
         assert!(lines.iter().any(|l| l.contains("[d] dry run")));
 

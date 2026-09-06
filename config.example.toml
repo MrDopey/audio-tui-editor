@@ -17,8 +17,8 @@ large_step_seconds = 10
 [auto_trim]
 # Level below which audio counts as silence, in dBFS. Beginning and ending
 # are configured independently.
-begin_threshold_db = -40
-end_threshold_db = -40
+begin_threshold_db = -50
+end_threshold_db = -50
 # How long the level must stay below the threshold to count, in seconds.
 begin_min_duration = 3
 end_min_duration = 5

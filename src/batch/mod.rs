@@ -240,7 +240,7 @@ mod tests {
     fn confirmation_lines_report_thresholds_and_skipped_files() {
         let lines = confirmation_lines(43, 2, &Config::default().auto_trim);
         assert_eq!(lines[0], "Apply automatic trim to 43 files?");
-        assert!(lines.iter().any(|l| l.contains("begin -40 dB")));
+        assert!(lines.iter().any(|l| l.contains("begin -50 dB")));
         assert!(lines.iter().any(|l| l.contains("rewritten in place")));
         assert!(lines
             .iter()

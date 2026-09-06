@@ -94,7 +94,7 @@ pub struct Cli {
     )]
     pub large_step_seconds: Option<f64>,
 
-    /// Level below which leading audio counts as silence, in dBFS; exclusive (default: -40 dB).
+    /// Level below which leading audio counts as silence, in dBFS; exclusive (default: -50 dB).
     #[arg(
         long,
         value_name = "DB",
@@ -103,7 +103,7 @@ pub struct Cli {
     )]
     pub begin_threshold_db: Option<f64>,
 
-    /// Level below which trailing audio counts as silence, in dBFS; exclusive (default: -40 dB).
+    /// Level below which trailing audio counts as silence, in dBFS; exclusive (default: -50 dB).
     #[arg(
         long,
         value_name = "DB",

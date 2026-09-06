@@ -380,9 +380,9 @@
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('j')); // volume down
         let reduced = app.session.as_ref().unwrap().player.volume();
-        assert_eq!(reduced, 95.0);
+        assert_eq!(reduced, 20.0);
         press(&mut app, KeyCode::Esc);
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.session.as_ref().unwrap().player.volume(), 95.0);
+        assert_eq!(app.session.as_ref().unwrap().player.volume(), 20.0);
     }

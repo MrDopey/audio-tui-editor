@@ -77,8 +77,8 @@ is an annotated copy of the defaults below.
 | `playback.volume_step` | `5` | Percentage points per volume key |
 | `editing.fine_step_seconds` | `1` | Marker movement for `←`/`→` and `h`/`l` |
 | `editing.large_step_seconds` | `10` | Marker movement for `Ctrl-←`/`Ctrl-→` and `Ctrl-h`/`Ctrl-l` |
-| `auto_trim.begin_threshold_db` | `-40` | Level below which leading audio counts as silence, in dBFS |
-| `auto_trim.end_threshold_db` | `-40` | Level below which trailing audio counts as silence, in dBFS |
+| `auto_trim.begin_threshold_db` | `-50` | Level below which leading audio counts as silence, in dBFS |
+| `auto_trim.end_threshold_db` | `-50` | Level below which trailing audio counts as silence, in dBFS |
 | `auto_trim.begin_min_duration` | `3` | How long leading silence must last to be trimmed, in seconds |
 | `auto_trim.end_min_duration` | `5` | How long trailing silence must last to be trimmed, in seconds |
 
