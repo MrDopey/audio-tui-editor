@@ -7,6 +7,7 @@
 
 mod browse;
 mod edit;
+mod help_text;
 mod metadata;
 mod overlay;
 mod play;
