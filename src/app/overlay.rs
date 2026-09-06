@@ -127,7 +127,11 @@ impl App {
                     self.overlay = Overlay::None;
                     self.perform_nav(nav);
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
+                // Deliberately not `q` here: everywhere else `q` steps back
+                // or quits, so aliasing it to "cancel" in this one dialog
+                // would trap a user who keeps pressing `q` expecting to
+                // eventually exit — Esc is the only way to cancel.
+                KeyCode::Esc => {
                     self.overlay = Overlay::None;
                     self.info("Cancelled.");
                 }
