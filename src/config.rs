@@ -260,7 +260,7 @@ end_min_duration = 5
     }
 
     #[test]
-    fn invalid_values_are_rejected() {
+    fn a_non_positive_playback_value_is_rejected() {
         let mut c = Config::default();
         assert!(c
             .apply(&Overrides {
@@ -268,10 +268,25 @@ end_min_duration = 5
                 ..Default::default()
             })
             .is_err());
+    }
+
+    #[test]
+    fn a_positive_threshold_db_is_rejected() {
         let mut c = Config::default();
         assert!(c
             .apply(&Overrides {
                 begin_threshold_db: Some(12.0),
+                ..Default::default()
+            })
+            .is_err());
+    }
+
+    #[test]
+    fn a_negative_min_duration_is_rejected() {
+        let mut c = Config::default();
+        assert!(c
+            .apply(&Overrides {
+                begin_min_duration: Some(-1.0),
                 ..Default::default()
             })
             .is_err());
