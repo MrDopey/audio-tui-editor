@@ -82,7 +82,7 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
-    fn play_seeking_and_volume_use_configured_steps() {
+    fn left_right_seeking_uses_the_configured_small_and_large_steps() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
@@ -108,18 +108,13 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_j_k_cycle_songs_without_touching_volume() {
+    fn ctrl_jk_cycles_songs_and_wraps_at_both_ends() {
         let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0), ("c.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
-        let starting_volume = app.session.as_ref().unwrap().player.volume();
 
         press_ctrl(&mut app, KeyCode::Char('j'));
         assert_eq!(app.session.as_ref().unwrap().index, 1);
-        assert_eq!(
-            app.session.as_ref().unwrap().player.volume(),
-            starting_volume
-        );
 
         press_ctrl(&mut app, KeyCode::Down);
         assert_eq!(app.session.as_ref().unwrap().index, 2);
@@ -132,6 +127,21 @@ mod tests {
             app.session.as_ref().unwrap().index,
             2,
             "wraps the other way"
+        );
+    }
+
+    #[test]
+    fn plain_j_k_change_volume_but_ctrl_j_k_does_not() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        let starting_volume = app.session.as_ref().unwrap().player.volume();
+
+        press_ctrl(&mut app, KeyCode::Char('j'));
+        assert_eq!(
+            app.session.as_ref().unwrap().player.volume(),
+            starting_volume,
+            "ctrl-j cycles songs, it must not touch volume"
         );
 
         press(&mut app, KeyCode::Char('k'));
