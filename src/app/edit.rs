@@ -54,7 +54,6 @@ impl App {
             }
             KeyCode::Char('b') => self.prompt_for_marker(MarkerKind::Begin),
             KeyCode::Char('e') => self.prompt_for_marker(MarkerKind::End),
-            KeyCode::Char('i') => self.prompt_for_marker(active),
             KeyCode::Char('c') => self.prompt_for_cursor(),
             KeyCode::Char('g') => self.seek_to_active_marker(),
             KeyCode::Char(' ') => self.with_player(AudioPlayer::toggle),

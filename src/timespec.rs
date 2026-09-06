@@ -153,7 +153,11 @@ pub fn parse_pos(input: &str) -> Result<PosSpec, String> {
 /// [`parse_cursor_pos`] gives them, unified here so `:b`/`:e` on the command
 /// line and the `b`/`e` prompt agree: `+X`/`-X` are `X` seconds after/before
 /// `current` (that marker's own position, not the file's start/end);
-/// `++X`/`--X`, bare `X`, `mm:ss` and `P%` are unchanged from [`parse_pos`].
+/// `++X`/`--X`, `mm:ss` and `P%` are unchanged from [`parse_pos`]. A bare `X`
+/// with no sign is *also* relative to `current` (the same as `+X`) — typing
+/// `10` means 10 seconds further from here, not the absolute timestamp
+/// `00:10` — since `mm:ss` (containing `:`) already covers the case where an
+/// absolute clock reading is what's wanted.
 pub fn parse_marker_pos(input: &str, current: f64) -> Result<PosSpec, String> {
     let s = input.trim();
     if let Some(rest) = s.strip_prefix("++") {
@@ -168,7 +172,10 @@ pub fn parse_marker_pos(input: &str, current: f64) -> Result<PosSpec, String> {
     if let Some(rest) = s.strip_prefix('-') {
         return Ok(PosSpec::Resolved(current - parse_duration(rest)?));
     }
-    parse_pos(s)
+    if s.ends_with('%') || s.contains(':') {
+        return parse_pos(s);
+    }
+    Ok(PosSpec::Resolved(current + parse_duration(s)?))
 }
 
 /// Parse a cursor-jump expression relative to a `current` position (design
@@ -178,8 +185,9 @@ pub fn parse_marker_pos(input: &str, current: f64) -> Result<PosSpec, String> {
 ///
 /// `+X`/`-X`: `X` seconds after/before `current`. `++X`/`--X`: `X` seconds
 /// after the start / before the end of the file (the same meaning `+`/`-`
-/// have in [`parse_pos`]). Bare `X`, `mm:ss` and `P%` are absolute/percent,
-/// same as [`parse_pos`].
+/// have in [`parse_pos`]). `mm:ss` and `P%` are absolute/percent, same as
+/// [`parse_pos`]; a bare `X` with no sign is relative to `current` instead
+/// (the same as `+X`), same reasoning as [`parse_marker_pos`].
 pub fn parse_cursor_pos(input: &str, current: f64, duration: f64) -> Result<f64, String> {
     let s = input.trim();
     let clamp = |v: f64| v.clamp(0.0, duration.max(0.0));
@@ -196,7 +204,10 @@ pub fn parse_cursor_pos(input: &str, current: f64, duration: f64) -> Result<f64,
     if let Some(rest) = s.strip_prefix('-') {
         return Ok(clamp(current - parse_duration(rest)?));
     }
-    Ok(clamp(parse_pos(s)?.resolve(duration)))
+    if s.ends_with('%') || s.contains(':') {
+        return Ok(clamp(parse_pos(s)?.resolve(duration)));
+    }
+    Ok(clamp(current + parse_duration(s)?))
 }
 
 /// Parse a duration: `10s`, `1m`, `2h`, `500ms`, `1:23`, `1:02:03`, `90`.

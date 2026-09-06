@@ -148,10 +148,10 @@ fn hint_text(app: &App) -> &'static str {
             "j/k move  gg/G ends  C-d/C-u page  / n/N search  Enter open  ? help  q quit"
         }
         Mode::Play => {
-            "space play  h/l seek  j/k vol  g/G ends  e edit  m meta  :w save  Esc back"
+            "space play  h/l seek  j/k vol  g/G ends  c jump  e edit  m meta  :w save  Esc back"
         }
         Mode::Edit => {
-            "h/l move  Tab switch  b/e/i type pos  a auto  r reset  :w save  Esc back"
+            "h/l move  Tab switch  b/e/c type pos  a auto  r reset  :w save  Esc back"
         }
         Mode::Metadata => {
             "j/k field  C-j/C-k song  / n N search  Enter edit  u revert  :w save  Esc back"

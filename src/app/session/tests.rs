@@ -56,9 +56,10 @@
         assert_eq!(session.begin.seconds(), 100.0);
         assert_eq!(session.active, MarkerKind::Begin);
 
-        // `e` does the same for End.
+        // `e` does the same for End. End starts at the file's end (600), and
+        // a bare number is relative to that (same as `-300`), not absolute.
         press(&mut app, KeyCode::Char('e'));
-        type_text(&mut app, "300");
+        type_text(&mut app, "-300");
         press(&mut app, KeyCode::Enter);
         let session = app.session.as_ref().unwrap();
         assert_eq!(session.end.seconds(), 300.0);
@@ -199,8 +200,8 @@
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('e'));
-        app.run_command("e 100");
-        app.run_command("b 200");
+        app.run_command("e -500"); // end -> 100 (500s before its own 600)
+        app.run_command("b +200"); // begin -> 200 (200s after its own 0)
         let session = app.session.as_ref().unwrap();
         assert!(session.begin.seconds() < session.end.seconds());
         assert!((session.begin.seconds() - 99.99).abs() < 0.001);

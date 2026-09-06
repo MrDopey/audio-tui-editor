@@ -99,8 +99,22 @@
         assert_eq!(parse_cursor_pos("-10s", 100.0, 600.0).unwrap(), 90.0);
         assert_eq!(parse_cursor_pos("++10s", 100.0, 600.0).unwrap(), 10.0);
         assert_eq!(parse_cursor_pos("--10s", 100.0, 600.0).unwrap(), 590.0);
+        // `mm:ss` and `P%` are unambiguous positions, so they stay absolute.
         assert_eq!(parse_cursor_pos("1:23", 100.0, 600.0).unwrap(), 83.0);
         assert_eq!(parse_cursor_pos("50%", 100.0, 600.0).unwrap(), 300.0);
+    }
+
+    #[test]
+    fn a_bare_number_is_relative_to_current_by_default() {
+        // current = 100s, duration = 600s — bare `X` means `+X`, same as
+        // typing the `+` explicitly, so `10` is 10s further, not 00:10.
+        assert_eq!(parse_cursor_pos("10", 100.0, 600.0).unwrap(), 110.0);
+        assert_eq!(parse_cursor_pos("10s", 100.0, 600.0).unwrap(), 110.0);
+        assert_eq!(parse_cursor_pos("1m", 100.0, 600.0).unwrap(), 160.0);
+        assert_eq!(
+            parse_marker_pos("10", 100.0).unwrap(),
+            PosSpec::Resolved(110.0)
+        );
     }
 
     #[test]

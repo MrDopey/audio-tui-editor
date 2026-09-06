@@ -39,6 +39,7 @@ impl App {
             }
             KeyCode::Char('g') => self.with_player(|p| p.seek_to(0.0)),
             KeyCode::Char('G') => self.with_player(|p| p.seek_to(p.duration())),
+            KeyCode::Char('c') => self.prompt_for_cursor(),
             KeyCode::Char('e') => self.enter_edit_mode(),
             KeyCode::Char('m') => self.mode = crate::app::Mode::Metadata,
             _ => {}
@@ -128,6 +129,19 @@ mod tests {
             2,
             "wraps the other way"
         );
+    }
+
+    #[test]
+    fn c_opens_a_cursor_prompt_in_play_mode() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('l')); // cursor -> 10s
+
+        press(&mut app, KeyCode::Char('c'));
+        let prompt = app.prompt.as_ref().unwrap();
+        assert!(prompt.buffer.is_empty(), "buffer starts empty, not prefilled");
+        assert_eq!(prompt.placeholder.as_deref(), Some("00:10"));
     }
 
     #[test]

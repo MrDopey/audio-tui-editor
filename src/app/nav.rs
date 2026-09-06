@@ -98,9 +98,8 @@ impl App {
         }
     }
 
-    /// `b`/`e`/`i`: open the typed-jump prompt for a marker (`i` targets
-    /// whichever is already active). Submitting moves the cursor there and
-    /// makes that marker the active, hugging one — see
+    /// `b`/`e`: open the typed-jump prompt for a marker. Submitting moves
+    /// the cursor there and makes that marker the active, hugging one — see
     /// `App::jump_marker_from_prompt` in `command.rs`.
     pub(super) fn prompt_for_marker(&mut self, kind: MarkerKind) {
         let current = self
@@ -111,6 +110,8 @@ impl App {
         self.prompt = Some(Prompt::with_placeholder(PromptKind::Marker(kind), current));
     }
 
+    /// `c`: open the typed-jump prompt for the cursor (the playback
+    /// position). Bound in both PLAY and EDIT.
     pub(super) fn prompt_for_cursor(&mut self) {
         let current = self
             .session

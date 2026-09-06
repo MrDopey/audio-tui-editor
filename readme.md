@@ -227,6 +227,7 @@ ffprobe recognises as audio appears and nothing else does.
 | `←` `→` `h` `l` | seek by the small step (default 10 s) |
 | `Ctrl-←` `Ctrl-→` `Ctrl-h` `Ctrl-l` | seek by the large step (default 60 s) |
 | `↑` `↓` `k` `j` | volume up / down |
+| `c` | type a jump for the cursor (playback position) |
 | `e` / `m` | EDIT / METADATA mode |
 | `Esc` | back to BROWSE |
 
@@ -245,20 +246,21 @@ leading/trailing silence.
 | `Ctrl-←` `Ctrl-→` `Ctrl-h` `Ctrl-l` | move it by the large step (default 10 s) |
 | `Tab` | switch between the beginning and ending marker |
 | `b` / `e` | type a position for the beginning / ending marker |
-| `i` | type a position for whichever marker is active |
 | `c` | type a position for the cursor |
 | `g` | seek to the active marker without playing |
 | `a` | recalculate the automatic markers |
 | `r` | reset to the whole file |
 | `p` | play from the active marker |
 
-Positions can be relative, so you never have to work out an absolute
-timestamp — `+10s`/`-10s` nudge a marker further from wherever it already
-sits (typed on the command line as `:b +10s` or into the `b`/`e`/`i` prompt,
-both mean the same thing); `++10s`/`--10s` jump from the file's start/end
-instead. The expression stays on screen next to the timestamp it resolves to.
+Positions are relative by default, so you never have to work out an absolute
+timestamp — a bare number like `10`, same as `+10s`, nudges a marker further
+from wherever it already sits (typed on the command line as `:b +10s` or
+into the `b`/`e`/`c` prompt, all three mean the same thing); `++10s`/`--10s`
+jump from the file's start/end instead, and `mm:ss`/`P%` are absolute. The
+expression stays on screen next to the timestamp it resolves to.
 
 ```
+10      10 seconds further from this marker's own position (same as +10s)
 +10s    10 seconds further from this marker's own position
 -10s    10 seconds back from this marker's own position
 ++10s   10 seconds after the start
