@@ -1,4 +1,5 @@
 name: Release
+run-name: Release (${{ inputs.bump_type }})
 
 # Only actions published by GitHub's own `actions` org are used here.
 # Everything else (Rust toolchain, target support, and the cargo-edit /
