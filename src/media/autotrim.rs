@@ -5,11 +5,11 @@
 //! and ending are configured independently, so two passes may be needed.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use anyhow::{Context, Result};
 
-use super::{ffmpeg_bin, require_success};
+use super::{backend_command, ffmpeg_bin, require_success};
 use crate::config::AutoTrim as AutoTrimConfig;
 
 /// How close to a boundary a silence must be to count as leading/trailing.
@@ -108,7 +108,7 @@ fn trailing_edge(silences: &[Silence], duration: f64) -> (f64, bool) {
 
 fn run_silencedetect(path: &Path, threshold_db: f64, min_duration: f64) -> Result<Vec<Silence>> {
     let filter = format!("silencedetect=noise={threshold_db}dB:d={min_duration}");
-    let output = Command::new(ffmpeg_bin())
+    let output = backend_command(&ffmpeg_bin())
         .args(["-v", "info", "-nostdin", "-i"])
         .arg(path)
         .args(["-map", "0:a:0", "-af", &filter, "-f", "null", "-"])

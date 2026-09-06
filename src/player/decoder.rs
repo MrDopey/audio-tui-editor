@@ -3,12 +3,12 @@
 use std::io::Read;
 use std::num::NonZero;
 use std::path::Path;
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdout, Stdio};
 use std::time::Duration;
 
 use rodio::source::Source;
 
-use crate::media::ffmpeg_bin;
+use crate::media::{backend_command, ffmpeg_bin};
 
 use super::{CHUNK_SAMPLES, OUTPUT_CHANNELS, OUTPUT_RATE};
 
@@ -24,7 +24,7 @@ pub(super) struct FfmpegSource {
 
 impl FfmpegSource {
     pub(super) fn spawn(path: &Path, offset: f64, remaining: f64) -> Option<FfmpegSource> {
-        let mut child = Command::new(ffmpeg_bin())
+        let mut child = backend_command(&ffmpeg_bin())
             .args(["-v", "error", "-nostdin"])
             .arg("-ss")
             .arg(format!("{offset:.6}"))

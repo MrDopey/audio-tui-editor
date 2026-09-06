@@ -20,6 +20,26 @@ pub fn ffprobe_bin() -> String {
     std::env::var("AUDIOEDIT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
 }
 
+/// Builds a `Command` for `bin` with a minimal, fixed environment instead of
+/// blindly inheriting the calling process's whole one.
+///
+/// ffmpeg/ffprobe need nothing from the environment beyond `PATH` (to find
+/// themselves, when `bin` is a bare name rather than an absolute override).
+/// Passing every inherited variable through anyway counts them against the
+/// same kernel limit as the command's own arguments, so a process with an
+/// unusually large environment — one launched by an agent/orchestration
+/// wrapper rather than a plain interactive shell, say — can make a perfectly
+/// ordinary ffmpeg invocation fail with `E2BIG` ("Argument list too long"),
+/// more easily the longer the file path being processed happens to be.
+pub fn backend_command(bin: &str) -> Command {
+    let mut command = Command::new(bin);
+    command.env_clear();
+    if let Ok(path) = std::env::var("PATH") {
+        command.env("PATH", path);
+    }
+    command
+}
+
 /// The actionable hint shown whenever a backend binary could not be spawned
 /// at all, whether that is discovered at startup or partway through a
 /// session (e.g. the binary was removed, or PATH changed under a
@@ -56,7 +76,7 @@ pub fn ensure_backend_available() -> Result<()> {
 /// A binary is only "available" if it both spawns and exits successfully; a
 /// binary that spawns but immediately errors out is not usable either.
 fn check_runnable(bin: &str) -> Result<()> {
-    let status = match Command::new(bin)
+    let status = match backend_command(bin)
         .arg("-version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -130,6 +150,28 @@ mod tests {
         assert!(
             format!("{err:#}").contains("PATH"),
             "a genuinely missing binary should still point at PATH"
+        );
+    }
+
+    #[test]
+    fn backend_command_does_not_leak_arbitrary_environment_variables() {
+        // SAFETY: this test doesn't spawn threads that also touch the
+        // environment, and the variable is removed again right after.
+        unsafe {
+            std::env::set_var("AUDIOEDIT_TEST_SHOULD_NOT_LEAK", "leaked");
+        }
+        let output = backend_command("env").output().expect("running `env`");
+        unsafe {
+            std::env::remove_var("AUDIOEDIT_TEST_SHOULD_NOT_LEAK");
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !stdout.contains("AUDIOEDIT_TEST_SHOULD_NOT_LEAK"),
+            "the child must not see the parent's arbitrary environment"
+        );
+        assert!(
+            stdout.contains("PATH="),
+            "PATH must still be passed through"
         );
     }
 

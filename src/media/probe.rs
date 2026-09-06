@@ -3,12 +3,11 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use super::{ffprobe_bin, require_success, spawn_error_hint};
+use super::{backend_command, ffprobe_bin, require_success, spawn_error_hint};
 
 // Re-exported so existing callers (`crate::media::probe::scan_folder`, etc.)
 // keep working now that scanning lives in its own module.
@@ -137,7 +136,7 @@ fn normalise_tags(raw: &BTreeMap<String, serde_json::Value>) -> BTreeMap<String,
 /// Probe a file. Returns `Ok(None)` when the file is readable but holds no
 /// audio stream, and `Err` when ffprobe could not read it at all.
 pub fn probe(path: &Path) -> Result<Option<MediaInfo>> {
-    let output = Command::new(ffprobe_bin())
+    let output = backend_command(&ffprobe_bin())
         .args([
             "-v",
             "error",

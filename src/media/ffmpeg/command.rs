@@ -3,13 +3,13 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::OnceLock;
 
 use anyhow::{bail, Result};
 
 use super::super::probe::{MediaInfo, METADATA_FIELDS};
-use super::super::{ffmpeg_bin, require_success, spawn_error_hint};
+use super::super::{backend_command, ffmpeg_bin, require_success, spawn_error_hint};
 use super::{Attempt, Processing};
 
 /// Stream copy snaps to packet boundaries, so output duration is allowed to
@@ -37,7 +37,7 @@ pub(super) fn run_attempt(
     attempt: Attempt,
     cover_art_tag: Option<&str>,
 ) -> Result<()> {
-    let mut command = Command::new(ffmpeg_bin());
+    let mut command = backend_command(&ffmpeg_bin());
     command.args(["-y", "-v", "error", "-nostdin"]);
 
     // Input-side seeking: fast, and for `-c copy` it is the only accurate form.
@@ -172,7 +172,7 @@ fn preferred(candidates: &[&str]) -> Option<String> {
 fn encoders() -> &'static Vec<String> {
     static ENCODERS: OnceLock<Vec<String>> = OnceLock::new();
     ENCODERS.get_or_init(|| {
-        let Ok(output) = Command::new(ffmpeg_bin())
+        let Ok(output) = backend_command(&ffmpeg_bin())
             .args(["-v", "error", "-hide_banner", "-encoders"])
             .stdin(Stdio::null())
             .output()

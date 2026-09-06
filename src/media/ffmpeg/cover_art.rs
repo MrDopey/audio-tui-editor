@@ -7,9 +7,9 @@
 //! extracted once up front and carried as that tag on every attempt.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
-use super::super::ffmpeg_bin;
+use super::super::{backend_command, ffmpeg_bin};
 
 /// Extracts the attached picture from `path` and returns it as a base64
 /// `METADATA_BLOCK_PICTURE` value, ready to pass straight to a
@@ -17,7 +17,7 @@ use super::super::ffmpeg_bin;
 /// an image format we don't recognise, ffmpeg erroring) yields `None`
 /// rather than failing the save — losing cover art beats losing the file.
 pub(super) fn extract_metadata_block_picture(path: &Path) -> Option<String> {
-    let output = Command::new(ffmpeg_bin())
+    let output = backend_command(&ffmpeg_bin())
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
         .args([

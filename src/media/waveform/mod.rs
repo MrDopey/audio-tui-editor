@@ -8,11 +8,11 @@ mod cache;
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use anyhow::{Context, Result};
 
-use super::{ffmpeg_bin, require_success, spawn_error_hint};
+use super::{backend_command, ffmpeg_bin, require_success, spawn_error_hint};
 
 /// Decode rate. Low enough to be quick on long files, high enough for a
 /// faithful amplitude envelope.
@@ -77,7 +77,7 @@ pub fn analyse(path: &Path, duration: f64) -> Result<Waveform> {
 }
 
 fn decode(path: &Path, duration: f64) -> Result<Waveform> {
-    let mut child = Command::new(ffmpeg_bin())
+    let mut child = backend_command(&ffmpeg_bin())
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
         .args([
