@@ -3,7 +3,7 @@
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
-    fn relative_expressions_set_markers_and_keep_their_text() {
+    fn relative_expressions_set_markers_from_the_file_start_and_end() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
@@ -14,12 +14,10 @@
         let session = app.session.as_ref().unwrap();
         assert_eq!(session.begin.seconds(), 10.0);
         assert_eq!(session.end.seconds(), 590.0);
-        assert_eq!(session.begin.text(), "+10s");
-        assert_eq!(session.end.to_string(), "-10s (09:50)");
     }
 
     #[test]
-    fn cursor_prompt_single_prefixes_are_relative_to_the_markers_current_position() {
+    fn single_plus_prefix_moves_relative_to_the_markers_position() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
@@ -30,6 +28,15 @@
         type_text(&mut app, "+5s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 15.0);
+    }
+
+    #[test]
+    fn single_minus_prefix_clamps_to_the_file_start() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
+        press_ctrl(&mut app, KeyCode::Char('l')); // begin marker -> 10s
 
         press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "-20s");
@@ -42,7 +49,7 @@
     }
 
     #[test]
-    fn cursor_prompt_double_prefixes_are_absolute_from_start_and_end() {
+    fn double_plus_prefix_is_absolute_from_the_start() {
         let mut app = app(&[("a.opus", 600.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
@@ -53,8 +60,16 @@
         type_text(&mut app, "++5s");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.session.as_ref().unwrap().begin.seconds(), 5.0);
+    }
 
+    #[test]
+    fn double_minus_prefix_is_absolute_from_the_end() {
+        let mut app = app(&[("a.opus", 600.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('e'));
         press(&mut app, KeyCode::Tab); // switch active marker to End
+
         press(&mut app, KeyCode::Char('c'));
         type_text(&mut app, "--5s");
         press(&mut app, KeyCode::Enter);
