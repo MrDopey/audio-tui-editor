@@ -40,7 +40,18 @@
     }
 
     #[test]
-    fn search_finds_wraps_and_reports_misses() {
+    fn search_jumps_to_the_first_match() {
+        let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
+        app.overlay = Overlay::None;
+
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "gam");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.selected, 2);
+    }
+
+    #[test]
+    fn repeat_search_wraps_around_to_a_single_match() {
         let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
         app.overlay = Overlay::None;
 
@@ -52,6 +63,12 @@
         // `n` wraps around to the only match again.
         press(&mut app, KeyCode::Char('n'));
         assert_eq!(app.selected, 2);
+    }
+
+    #[test]
+    fn search_with_no_match_reports_an_error() {
+        let mut app = app(&[("alpha.opus", 1.0), ("beta.opus", 2.0), ("gamma.opus", 3.0)]);
+        app.overlay = Overlay::None;
 
         press(&mut app, KeyCode::Char('/'));
         type_text(&mut app, "nothing");
@@ -106,14 +123,19 @@
     }
 
     #[test]
-    fn search_is_case_insensitive_and_n_capital_goes_backwards() {
+    fn search_matches_are_case_insensitive() {
         let mut app = app(&[("One.opus", 1.0), ("two.opus", 2.0), ("three.opus", 3.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Char('/'));
         type_text(&mut app, "ONE");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.selected, 0);
+    }
 
+    #[test]
+    fn capital_n_repeats_the_last_search_backwards() {
+        let mut app = app(&[("One.opus", 1.0), ("two.opus", 2.0), ("three.opus", 3.0)]);
+        app.overlay = Overlay::None;
         app.last_search = "o".to_string();
         app.selected = 2;
         press(&mut app, KeyCode::Char('N'));
