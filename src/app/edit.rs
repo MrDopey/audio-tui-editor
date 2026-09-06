@@ -68,7 +68,7 @@ impl App {
             }
             KeyCode::Char('a') => self.recalculate_auto_markers(),
             KeyCode::Char('r') => self.reset_markers(),
-            KeyCode::Char('i') => self.toggle_cover_art(),
+            KeyCode::Char('I') => self.toggle_cover_art(),
             _ => {}
         }
     }
@@ -192,13 +192,13 @@ mod tests {
     }
 
     #[test]
-    fn i_toggles_cover_art_in_edit_mode() {
+    fn capital_i_toggles_cover_art_in_edit_mode() {
         let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter); // PLAY
         press(&mut app, KeyCode::Char('e')); // EDIT
         assert!(app.show_cover_art, "starts shown");
-        press(&mut app, KeyCode::Char('i'));
+        press(&mut app, KeyCode::Char('I'));
         assert!(!app.show_cover_art);
     }
 

@@ -42,7 +42,7 @@ impl App {
             KeyCode::Char('c') => self.prompt_for_cursor(),
             KeyCode::Char('e') => self.enter_edit_mode(),
             KeyCode::Char('m') => self.mode = crate::app::Mode::Metadata,
-            KeyCode::Char('i') => self.toggle_cover_art(),
+            KeyCode::Char('I') => self.toggle_cover_art(),
             _ => {}
         }
     }
@@ -146,14 +146,14 @@ mod tests {
     }
 
     #[test]
-    fn i_toggles_cover_art_in_play_mode() {
+    fn capital_i_toggles_cover_art_in_play_mode() {
         let mut app = app_with_cover_art_support(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
         assert!(app.show_cover_art, "starts shown");
-        press(&mut app, KeyCode::Char('i'));
+        press(&mut app, KeyCode::Char('I'));
         assert!(!app.show_cover_art);
-        press(&mut app, KeyCode::Char('i'));
+        press(&mut app, KeyCode::Char('I'));
         assert!(app.show_cover_art);
     }
 
@@ -163,7 +163,7 @@ mod tests {
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
         let before = app.show_cover_art;
-        press(&mut app, KeyCode::Char('i'));
+        press(&mut app, KeyCode::Char('I'));
         assert_eq!(
             app.show_cover_art, before,
             "the flag must not flip without terminal support"

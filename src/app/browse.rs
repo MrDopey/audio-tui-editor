@@ -11,11 +11,14 @@ impl App {
         let half_page = (self.page_rows / 2).max(1) as isize;
         let page = self.page_rows.max(1) as isize;
         let pending_g = std::mem::take(&mut self.pending_g);
+        let pending_z = std::mem::take(&mut self.pending_z);
 
         match key.code {
             KeyCode::Char('g') if pending_g => self.selected = 0,
             KeyCode::Char('g') => self.pending_g = true,
             KeyCode::Char('G') => self.selected = self.files.len().saturating_sub(1),
+            KeyCode::Char('z') if pending_z => self.center_viewport_on_selection(),
+            KeyCode::Char('z') => self.pending_z = true,
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
             KeyCode::Char('d') if ctrl => self.move_selection(half_page),
@@ -41,6 +44,14 @@ impl App {
         }
         let last = self.files.len() as isize - 1;
         self.selected = (self.selected as isize + delta).clamp(0, last) as usize;
+    }
+
+    /// `zz`: re-center the viewport on the current selection, vim-style.
+    fn center_viewport_on_selection(&mut self) {
+        let visible = self.page_rows.max(1);
+        let target = self.selected.saturating_sub(visible / 2);
+        let max_offset = self.files.len().saturating_sub(visible);
+        *self.list_state.offset_mut() = target.min(max_offset);
     }
 
     /// `n`/`N`: repeat the last `/` search — over file names in BROWSE, or

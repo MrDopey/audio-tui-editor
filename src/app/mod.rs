@@ -175,6 +175,7 @@ pub struct App {
     /// Volume carried across files so it feels like one application.
     volume: f64,
     pending_g: bool,
+    pending_z: bool,
     /// Set by a Ctrl-C press; a second, consecutive Ctrl-C force-quits.
     /// Cleared by any other key, so it never lingers across unrelated input.
     ctrl_c_armed: bool,
@@ -231,6 +232,7 @@ impl App {
             output,
             volume: 25.0,
             pending_g: false,
+            pending_z: false,
             ctrl_c_armed: false,
             files_generation: 0,
             file_rows_cache: None,

@@ -29,6 +29,27 @@
     }
 
     #[test]
+    fn zz_centers_the_viewport_on_the_current_selection() {
+        let files: Vec<(&str, f64)> = (0..20).map(|_| ("a.opus", 1.0)).collect();
+        let mut app = app(&files);
+        app.overlay = Overlay::None;
+        app.page_rows = 4;
+
+        app.selected = 10;
+        press(&mut app, KeyCode::Char('z'));
+        assert_eq!(*app.list_state.offset_mut(), 0, "single z does nothing yet");
+        press(&mut app, KeyCode::Char('z'));
+        assert_eq!(*app.list_state.offset_mut(), 8, "10 - page_rows/2");
+
+        // Near the end of the list, centering clamps to the last full page
+        // rather than scrolling past the final entries.
+        app.selected = 19;
+        press(&mut app, KeyCode::Char('z'));
+        press(&mut app, KeyCode::Char('z'));
+        assert_eq!(*app.list_state.offset_mut(), 16, "clamped to files.len() - page_rows");
+    }
+
+    #[test]
     fn navigation_is_clamped_to_the_list() {
         let mut app = app(&[("a.opus", 1.0), ("b.opus", 2.0)]);
         app.overlay = Overlay::None;
