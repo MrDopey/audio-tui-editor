@@ -27,8 +27,8 @@
     }
 
     #[test]
-    fn a_silent_player_still_tracks_position_and_volume() {
-        let path = fixture("silent", 2);
+    fn seeking_moves_and_clamps_position_and_detects_at_end() {
+        let path = fixture("silent-seek", 2);
         let output = AudioOutput::silent();
         let mut player = AudioPlayer::new(&output, &path, 600.0, 100.0);
 
@@ -46,6 +46,14 @@
         player.seek_to(10_000.0);
         assert_eq!(player.position(), 600.0);
         assert!(player.at_end());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn volume_is_set_and_clamped_between_0_and_150() {
+        let path = fixture("silent-volume", 2);
+        let output = AudioOutput::silent();
+        let mut player = AudioPlayer::new(&output, &path, 600.0, 100.0);
 
         player.set_volume(50.0);
         assert_eq!(player.volume(), 50.0);
