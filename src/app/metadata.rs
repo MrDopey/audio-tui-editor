@@ -151,8 +151,8 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
-    fn ctrl_j_k_cycle_songs_and_stay_in_metadata_mode() {
-        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+    fn plain_j_k_move_between_metadata_fields() {
+        let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter); // PLAY
         press(&mut app, KeyCode::Char('m')); // METADATA
@@ -163,6 +163,15 @@ mod tests {
             1,
             "plain j still moves between fields"
         );
+    }
+
+    #[test]
+    fn ctrl_j_k_cycle_songs_and_stay_in_metadata_mode() {
+        let mut app = app(&[("a.opus", 60.0), ("b.opus", 60.0)]);
+        app.overlay = Overlay::None;
+        press(&mut app, KeyCode::Enter); // PLAY
+        press(&mut app, KeyCode::Char('m')); // METADATA
+        assert_eq!(app.mode, Mode::Metadata);
 
         press_ctrl(&mut app, KeyCode::Char('j'));
         assert_eq!(
@@ -216,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn n_repeats_a_field_search_and_wraps() {
+    fn n_on_a_single_match_wraps_back_to_itself() {
         let mut app = app(&[("a.opus", 60.0)]);
         app.overlay = Overlay::None;
         press(&mut app, KeyCode::Enter);
