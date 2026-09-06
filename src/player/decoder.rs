@@ -193,10 +193,10 @@ mod tests {
     }
 
     #[test]
-    fn the_decoder_reports_its_remaining_duration() {
+    fn a_negative_remaining_duration_is_clamped_to_zero() {
         let path = fixture("duration", 2);
-        let source = FfmpegSource::spawn(&path, 0.5, 1.5).expect("spawning the decoder");
-        assert_eq!(source.total_duration(), Some(Duration::from_secs_f64(1.5)));
+        let source = FfmpegSource::spawn(&path, 0.5, -5.0).expect("spawning the decoder");
+        assert_eq!(source.total_duration(), Some(Duration::ZERO));
         cleanup(&path);
     }
 
